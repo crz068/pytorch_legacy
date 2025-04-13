@@ -42,7 +42,7 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat > Dockerfile.cuda118 << 'EOL'
-          FROM nvidia/cuda:11.8.0-devel-ubuntu20.04 AS builder
+          FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 AS builder
 
           # Accept Python version as build argument
           ARG PYTHON_VERSION
@@ -73,15 +73,6 @@ jobs:
               cmake --version && \
               rm -rf /var/lib/apt/lists/*
 
-          # Install cuDNN
-          RUN apt-get update && \
-              apt-get install -y --no-install-recommends \
-              zlib1g \
-              libncurses5 \
-              libcudnn8=8.7.0.84-1+cuda11.8 \
-              libcudnn8-dev=8.7.0.84-1+cuda11.8 \
-              && rm -rf /var/lib/apt/lists/*
-
           # Install Python from deadsnakes PPA
           RUN apt-get update && \
               apt-get install -y software-properties-common && \
@@ -106,8 +97,6 @@ jobs:
 
           # Set environment variables for build
           ENV CUDA_HOME="/usr/local/cuda" \
-              CUDNN_INCLUDE_DIR="/usr/local/cuda/include" \
-              CUDNN_LIBRARY="/usr/local/cuda/lib64/libcudnn.so" \
               LIBRARY_PATH="/usr/local/cuda/lib64:${LIBRARY_PATH}" \
               USE_CUDA=1 \
               USE_CUDNN=1 \
@@ -129,14 +118,14 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
 
+          # Verify cuDNN is present in the Docker image
+          find /usr/local/cuda -name "libcudnn*" -type f
+          find /usr/local/cuda -name "cudnn*.h" -type f
+
           # Clone PyTorch
           echo "Cloning PyTorch version ${PYTORCH_VERSION}"
           git clone -b "v${PYTORCH_VERSION}" --recursive https://github.com/pytorch/pytorch.git /workspace/pytorch
           cd /workspace/pytorch
-
-          # Verify cuDNN is present
-          ls -la /usr/local/cuda/lib64/libcudnn*
-          ls -la /usr/local/cuda/include/cudnn*
 
           # Configure build environment
           export PYTORCH_BUILD_VERSION="${PYTORCH_VERSION}+cu${CUDA_VERSION_NO_DOT}"
@@ -147,17 +136,21 @@ jobs:
           # For CUDA 11.x builds
           export BUILD_SPLIT_CUDA=ON
           
-          # Explicitly set cuDNN paths
-          export CUDNN_INCLUDE_DIR="/usr/local/cuda/include"
-          export CUDNN_LIBRARY="/usr/local/cuda/lib64/libcudnn.so"
+          # Detect cuDNN paths and set them properly
+          CUDNN_INCLUDE=$(find /usr/local -name cudnn.h | head -1 | xargs dirname)
+          CUDNN_LIBRARY=$(find /usr/local -name libcudnn.so | head -1)
+          
+          echo "Found cuDNN include at: ${CUDNN_INCLUDE}"
+          echo "Found cuDNN library at: ${CUDNN_LIBRARY}"
+          
+          export CUDNN_INCLUDE_DIR="${CUDNN_INCLUDE}"
+          export CUDNN_LIBRARY="${CUDNN_LIBRARY}"
           
           # Build PyTorch with explicit cuDNN paths
           echo "Building PyTorch ${PYTORCH_VERSION} with CUDA ${CUDA_VERSION}"
           
           # Add verbose output for debugging
-          python setup.py bdist_wheel \
-            --cmake-args="-DCUDNN_INCLUDE_DIR=/usr/local/cuda/include" \
-            --cmake-args="-DCUDNN_LIBRARY=/usr/local/cuda/lib64/libcudnn.so"
+          VERBOSE=1 python setup.py bdist_wheel
           
           # Copy wheel file to shared directory
           cp dist/*.whl /artifacts/

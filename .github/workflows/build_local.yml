@@ -115,7 +115,7 @@ jobs:
 
           # Clone PyTorch
           echo "Cloning PyTorch version ${PYTORCH_VERSION}"
-          git clone -b "v${PYTORCH_VERSION}" --recursive https://github.com/pytorch/pytorch.git /workspace/pytorch
+          git clone -b "v${PYTORCH_VERSION}" --recursive https://gh.526677.xyz/github.com/pytorch/pytorch.git /workspace/pytorch
           cd /workspace/pytorch
 
           # Configure build environment

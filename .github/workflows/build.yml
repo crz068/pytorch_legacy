@@ -39,7 +39,7 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat > Dockerfile.cuda118 << 'EOL'
-          FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+          FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
           # Accept Python version as build argument
           ARG PYTHON_VERSION
@@ -90,7 +90,8 @@ jobs:
               USE_MKLDNN=1 \
               BUILD_TEST=0 \
               USE_FBGEMM=1 \
-              BUILD_SPLIT_CUDA=ON
+              BUILD_SPLIT_CUDA=ON \
+              CMAKE_POLICY_VERSION_MINIMUM=3.5
 
           WORKDIR /workspace
           EOL
@@ -105,6 +106,9 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
 
+          # Check CMake version
+          cmake --version
+
           # Clone PyTorch
           echo "Cloning PyTorch version ${PYTORCH_VERSION}"
           git clone -b "v${PYTORCH_VERSION}" --recursive https://github.com/pytorch/pytorch.git /workspace/pytorch
@@ -115,6 +119,7 @@ jobs:
           export PYTORCH_BUILD_NUMBER=1
           export TZ=UTC
           export TORCH_CUDA_ARCH_LIST="3.5;3.7;5.0;6.0;7.0;7.5;8.0;8.6"
+          export CMAKE_POLICY_VERSION_MINIMUM=3.5
           
           # For CUDA 11.x builds
           export BUILD_SPLIT_CUDA=ON

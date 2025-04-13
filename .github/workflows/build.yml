@@ -31,18 +31,15 @@ jobs:
 
       - name: Set environment variables
         run: |
-          # Extract just the version number without the dots
-          PYTHON_VERSION_NODOT=$(echo ${{ github.event.inputs.python_version }} | tr -d '.')
           echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
           echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
           echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
           echo "PYTHON_VERSION=${{ github.event.inputs.python_version }}" >> $GITHUB_ENV
-          echo "PYTHON_VERSION_NODOT=${PYTHON_VERSION_NODOT}" >> $GITHUB_ENV
 
       - name: Create Dockerfile
         run: |
           cat > Dockerfile.cuda118 << 'EOL'
-          FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 AS builder
+          FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
 
           # Accept Python version as build argument
           ARG PYTHON_VERSION
@@ -50,10 +47,11 @@ jobs:
           # Set environment variables to avoid interactive prompts
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # Install dependencies with newer CMake
+          # Install dependencies 
           RUN apt-get update && apt-get install -y --no-install-recommends \
               build-essential \
               ca-certificates \
+              cmake \
               curl \
               git \
               libjpeg-dev \
@@ -62,16 +60,7 @@ jobs:
               ninja-build \
               software-properties-common \
               wget \
-              gnupg \
               && rm -rf /var/lib/apt/lists/*
-
-          # Install latest CMake
-          RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
-              apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main' && \
-              apt-get update && \
-              apt-get install -y cmake && \
-              cmake --version && \
-              rm -rf /var/lib/apt/lists/*
 
           # Install Python from deadsnakes PPA
           RUN apt-get update && \
@@ -96,9 +85,7 @@ jobs:
               pip install numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions
 
           # Set environment variables for build
-          ENV CUDA_HOME="/usr/local/cuda" \
-              LIBRARY_PATH="/usr/local/cuda/lib64:${LIBRARY_PATH}" \
-              USE_CUDA=1 \
+          ENV USE_CUDA=1 \
               USE_CUDNN=1 \
               USE_MKLDNN=1 \
               BUILD_TEST=0 \
@@ -118,10 +105,6 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
 
-          # Verify cuDNN is present in the Docker image
-          find /usr/local/cuda -name "libcudnn*" -type f
-          find /usr/local/cuda -name "cudnn*.h" -type f
-
           # Clone PyTorch
           echo "Cloning PyTorch version ${PYTORCH_VERSION}"
           git clone -b "v${PYTORCH_VERSION}" --recursive https://github.com/pytorch/pytorch.git /workspace/pytorch
@@ -136,21 +119,9 @@ jobs:
           # For CUDA 11.x builds
           export BUILD_SPLIT_CUDA=ON
           
-          # Detect cuDNN paths and set them properly
-          CUDNN_INCLUDE=$(find /usr/local -name cudnn.h | head -1 | xargs dirname)
-          CUDNN_LIBRARY=$(find /usr/local -name libcudnn.so | head -1)
-          
-          echo "Found cuDNN include at: ${CUDNN_INCLUDE}"
-          echo "Found cuDNN library at: ${CUDNN_LIBRARY}"
-          
-          export CUDNN_INCLUDE_DIR="${CUDNN_INCLUDE}"
-          export CUDNN_LIBRARY="${CUDNN_LIBRARY}"
-          
-          # Build PyTorch with explicit cuDNN paths
+          # Build PyTorch
           echo "Building PyTorch ${PYTORCH_VERSION} with CUDA ${CUDA_VERSION}"
-          
-          # Add verbose output for debugging
-          VERBOSE=1 python setup.py bdist_wheel
+          python setup.py bdist_wheel
           
           # Copy wheel file to shared directory
           cp dist/*.whl /artifacts/

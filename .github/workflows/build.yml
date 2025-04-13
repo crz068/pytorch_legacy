@@ -50,11 +50,10 @@ jobs:
           # Set environment variables to avoid interactive prompts
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # Install common dependencies
+          # Install dependencies with newer CMake
           RUN apt-get update && apt-get install -y --no-install-recommends \
               build-essential \
               ca-certificates \
-              cmake \
               curl \
               git \
               libjpeg-dev \
@@ -63,6 +62,24 @@ jobs:
               ninja-build \
               software-properties-common \
               wget \
+              gnupg \
+              && rm -rf /var/lib/apt/lists/*
+
+          # Install latest CMake
+          RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
+              apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main' && \
+              apt-get update && \
+              apt-get install -y cmake && \
+              cmake --version && \
+              rm -rf /var/lib/apt/lists/*
+
+          # Install cuDNN
+          RUN apt-get update && \
+              apt-get install -y --no-install-recommends \
+              zlib1g \
+              libncurses5 \
+              libcudnn8=8.7.0.84-1+cuda11.8 \
+              libcudnn8-dev=8.7.0.84-1+cuda11.8 \
               && rm -rf /var/lib/apt/lists/*
 
           # Install Python from deadsnakes PPA
@@ -90,7 +107,7 @@ jobs:
           # Set environment variables for build
           ENV CUDA_HOME="/usr/local/cuda" \
               CUDNN_INCLUDE_DIR="/usr/local/cuda/include" \
-              CUDNN_LIB_DIR="/usr/local/cuda/lib64" \
+              CUDNN_LIBRARY="/usr/local/cuda/lib64/libcudnn.so" \
               LIBRARY_PATH="/usr/local/cuda/lib64:${LIBRARY_PATH}" \
               USE_CUDA=1 \
               USE_CUDNN=1 \
@@ -117,6 +134,10 @@ jobs:
           git clone -b "v${PYTORCH_VERSION}" --recursive https://github.com/pytorch/pytorch.git /workspace/pytorch
           cd /workspace/pytorch
 
+          # Verify cuDNN is present
+          ls -la /usr/local/cuda/lib64/libcudnn*
+          ls -la /usr/local/cuda/include/cudnn*
+
           # Configure build environment
           export PYTORCH_BUILD_VERSION="${PYTORCH_VERSION}+cu${CUDA_VERSION_NO_DOT}"
           export PYTORCH_BUILD_NUMBER=1
@@ -126,9 +147,17 @@ jobs:
           # For CUDA 11.x builds
           export BUILD_SPLIT_CUDA=ON
           
-          # Build PyTorch
+          # Explicitly set cuDNN paths
+          export CUDNN_INCLUDE_DIR="/usr/local/cuda/include"
+          export CUDNN_LIBRARY="/usr/local/cuda/lib64/libcudnn.so"
+          
+          # Build PyTorch with explicit cuDNN paths
           echo "Building PyTorch ${PYTORCH_VERSION} with CUDA ${CUDA_VERSION}"
-          python setup.py bdist_wheel
+          
+          # Add verbose output for debugging
+          python setup.py bdist_wheel \
+            --cmake-args="-DCUDNN_INCLUDE_DIR=/usr/local/cuda/include" \
+            --cmake-args="-DCUDNN_LIBRARY=/usr/local/cuda/lib64/libcudnn.so"
           
           # Copy wheel file to shared directory
           cp dist/*.whl /artifacts/

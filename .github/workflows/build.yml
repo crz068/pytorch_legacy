@@ -122,7 +122,7 @@ jobs:
           export PYTORCH_BUILD_VERSION="${PYTORCH_VERSION}+cu${CUDA_VERSION_NO_DOT}"
           export PYTORCH_BUILD_NUMBER=1
           export TZ=UTC
-          export TORCH_CUDA_ARCH_LIST="3.5;3.7;5.0;6.0;7.0;7.5;8.0;8.6"
+          export TORCH_CUDA_ARCH_LIST="3.5;3.7"
           export CMAKE_POLICY_VERSION_MINIMUM=3.5
           
           # Memory optimization

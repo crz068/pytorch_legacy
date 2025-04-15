@@ -1,0 +1,226 @@
+name: Build PyTorch for Multiple Python Versions
+
+on:
+  workflow_dispatch:
+    inputs:
+      pytorch_version:
+        description: 'PyTorch version to build (e.g. 2.0.0, 2.1.0)'
+        required: true
+        type: string
+
+jobs:
+  build-base:
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: write
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup directories
+        run: |
+          mkdir -p _build/artifacts
+          mkdir -p _build/base_build
+
+      - name: Set environment variables
+        run: |
+          echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
+          echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile.cuda118 << 'EOL'
+          FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+
+          # Set environment variables to avoid interactive prompts
+          ENV DEBIAN_FRONTEND=noninteractive
+
+          # Install dependencies 
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              build-essential \
+              ca-certificates \
+              cmake \
+              curl \
+              git \
+              libjpeg-dev \
+              libpng-dev \
+              libopenblas-dev \
+              ninja-build \
+              software-properties-common \
+              wget \
+              && rm -rf /var/lib/apt/lists/*
+
+          # Install Python from deadsnakes PPA
+          RUN apt-get update && \
+              apt-get install -y software-properties-common && \
+              add-apt-repository ppa:deadsnakes/ppa && \
+              apt-get update && \
+              apt-get install -y --no-install-recommends \
+              python3.8 python3.8-dev python3.8-distutils \
+              python3.9 python3.9-dev python3.9-distutils \
+              python3.10 python3.10-dev python3.10-distutils \
+              python3.11 python3.11-dev python3.11-distutils \
+              python3.12 python3.12-dev python3.12-distutils \
+              && rm -rf /var/lib/apt/lists/*
+
+          # Set Python 3.8 as default for initial build
+          RUN ln -sf /usr/bin/python3.8 /usr/bin/python3 && \
+              ln -sf /usr/bin/python3 /usr/bin/python
+
+          # Install pip for all Python versions
+          RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.8 && \
+              curl -sS https://bootstrap.pypa.io/get-pip.py | python3.9 && \
+              curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10 && \
+              curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+              curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+
+          # Install dependencies for PyTorch for all Python versions
+          RUN python3.8 -m pip install wheel setuptools numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions && \
+              python3.9 -m pip install wheel setuptools numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions && \
+              python3.10 -m pip install wheel setuptools numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions && \
+              python3.11 -m pip install wheel setuptools numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions && \
+              python3.12 -m pip install wheel setuptools numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions
+
+          # Set environment variables for build
+          ENV USE_CUDA=1 \
+              USE_CUDNN=1 \
+              USE_MKLDNN=1 \
+              BUILD_TEST=0 \
+              USE_FBGEMM=1 \
+              BUILD_SPLIT_CUDA=ON \
+              CMAKE_POLICY_VERSION_MINIMUM=3.5
+
+          WORKDIR /workspace
+          EOL
+
+      - name: Create build script
+        run: |
+          cat > build_base.sh << 'EOL'
+          #!/usr/bin/env bash
+          set -exo pipefail
+
+          # Setup git configuration
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          # Clone PyTorch
+          echo "Cloning PyTorch version ${PYTORCH_VERSION}"
+          git clone -b "v${PYTORCH_VERSION}" --recursive https://github.com/pytorch/pytorch.git /workspace/pytorch
+          cd /workspace/pytorch
+
+          # Configure build environment
+          export PYTORCH_BUILD_VERSION="${PYTORCH_VERSION}+cu${CUDA_VERSION_NO_DOT}"
+          export PYTORCH_BUILD_NUMBER=1
+          export TZ=UTC
+          export TORCH_CUDA_ARCH_LIST="3.5;3.7"
+          export CMAKE_POLICY_VERSION_MINIMUM=3.5
+          export MAX_JOBS=2
+          export BUILD_SPLIT_CUDA=ON
+          
+          # Build PyTorch with Python 3.8 (base build)
+          echo "Building base PyTorch ${PYTORCH_VERSION} with CUDA ${CUDA_VERSION}"
+          python3.8 setup.py build
+          
+          # Copy build directory to shared volume for reuse
+          cp -r build /base_build/
+          
+          # Now build wheel for Python 3.8
+          python3.8 setup.py bdist_wheel
+          cp dist/*.whl /artifacts/
+          EOL
+          
+          chmod +x build_base.sh
+
+      - name: Create repackaging script
+        run: |
+          cat > build_python_version.sh << 'EOL'
+          #!/usr/bin/env bash
+          set -exo pipefail
+
+          PYTHON_VERSION=$1
+          cd /workspace/pytorch
+
+          # Configure build environment
+          export PYTORCH_BUILD_VERSION="${PYTORCH_VERSION}+cu${CUDA_VERSION_NO_DOT}"
+          export PYTORCH_BUILD_NUMBER=1
+          export TZ=UTC
+          export TORCH_CUDA_ARCH_LIST="3.5;3.7"
+          export CMAKE_POLICY_VERSION_MINIMUM=3.5
+          export MAX_JOBS=2
+          export BUILD_SPLIT_CUDA=ON
+
+          # Restore build directory from base build
+          rm -rf build
+          cp -r /base_build/build .
+
+          # Build wheel for specified Python version
+          echo "Building PyTorch ${PYTORCH_VERSION} wheel for Python ${PYTHON_VERSION}"
+          python${PYTHON_VERSION} setup.py bdist_wheel
+          cp dist/*.whl /artifacts/
+          EOL
+          
+          chmod +x build_python_version.sh
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t pytorch-cuda118-builder \
+            -f Dockerfile.cuda118 .
+
+      - name: Build PyTorch base (Python 3.8)
+        run: |
+          docker run --rm \
+            -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+            -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+            -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+            -v $(pwd)/_build/artifacts:/artifacts \
+            -v $(pwd)/_build/base_build:/base_build \
+            -v $(pwd)/build_base.sh:/workspace/build_base.sh \
+            pytorch-cuda118-builder \
+            bash /workspace/build_base.sh
+
+      - name: Build wheels for Python 3.9-3.12
+        run: |
+          for py_version in 3.9 3.10 3.11 3.12; do
+            docker run --rm \
+              -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+              -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+              -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+              -v $(pwd)/_build/artifacts:/artifacts \
+              -v $(pwd)/_build/base_build:/base_build \
+              -v $(pwd)/build_python_version.sh:/workspace/build_python_version.sh \
+              pytorch-cuda118-builder \
+              bash /workspace/build_python_version.sh $py_version
+          done
+
+      - name: List artifacts
+        run: |
+          ls -la _build/artifacts/
+          
+      - name: Upload artifacts to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-wheels
+          path: _build/artifacts/*.whl
+          if-no-files-found: error
+          
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pytorch-${{ github.event.inputs.pytorch_version }}
+          name: PyTorch ${{ github.event.inputs.pytorch_version }}
+          body: |
+            PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8
+            Built with architecture support for SM35, SM37.
+            
+            Includes wheels for Python 3.8, 3.9, 3.10, 3.11, and 3.12.
+          draft: false
+          prerelease: false
+          files: _build/artifacts/*.whl

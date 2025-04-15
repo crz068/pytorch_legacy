@@ -42,10 +42,10 @@ jobs:
           key: pytorch-${{ github.event.inputs.pytorch_version }}-source
 
       # Clone PyTorch outside container if not cached
-      # - name: Clone PyTorch
-      #   if: steps.cache-pytorch.outputs.cache-hit != 'true'
-      #   run: |
-      #     git clone -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+      - name: Clone PyTorch
+        if: steps.cache-pytorch.outputs.cache-hit != 'true'
+        run: |
+          git clone -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
 
       - name: Create Dockerfile
         run: |

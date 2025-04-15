@@ -168,7 +168,7 @@ jobs:
       - name: Build all Python versions
         run: |
           # Run for all Python versions in a single loop
-          for py_version in 3.8 3.9 3.10 3.11 3.12; do
+          for py_version in 3.9 3.10 3.11 3.12; do
             docker run --rm \
               -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
               -e CUDA_VERSION=${{ env.CUDA_VERSION }} \

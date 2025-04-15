@@ -79,7 +79,11 @@ jobs:
           #     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10 && \
           #     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
           #     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
-          RUN python3.8 -m ensurepip --upgrade
+          RUN python3.8 -m ensurepip --upgrade && \
+              python3.9 -m ensurepip --upgrade && \
+              python3.10 -m ensurepip --upgrade && \
+              python3.11 -m ensurepip --upgrade && \
+              python3.12 -m ensurepip --upgrade
 
           # Install dependencies for PyTorch for all Python versions
           RUN python3.8 -m pip install wheel setuptools numpy ninja pyyaml mkl mkl-include setuptools cmake cffi typing_extensions && \

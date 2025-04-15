@@ -1,4 +1,4 @@
-name: Build PyTorch with CUDA 11.8
+name: Build PyTorch
 
 on:
   workflow_dispatch:
@@ -21,6 +21,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions: 
+      contents: write
     steps:
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
@@ -35,10 +37,13 @@ jobs:
 
       - name: Set environment variables
         run: |
+          PYTHON_VERSION_NODOT=$(echo ${{ github.event.inputs.python_version }} | tr -d '.')
           echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
           echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
           echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
           echo "PYTHON_VERSION=${{ github.event.inputs.python_version }}" >> $GITHUB_ENV
+          echo "PYTHON_VERSION_NODOT=${PYTHON_VERSION_NODOT}" >> $GITHUB_ENV
+          echo "PYTHON_TAG=cp${PYTHON_VERSION_NODOT}" >> $GITHUB_ENV
 
       - name: Create Dockerfile
         run: |
@@ -162,15 +167,22 @@ jobs:
       - name: List artifacts
         run: |
           ls -la _build/artifacts/
-
+          
+      - name: Upload artifacts to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-${{ env.PYTHON_TAG }}
+          path: _build/artifacts/*.whl
+          if-no-files-found: error
+          
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: pytorch-${{ github.event.inputs.pytorch_version }}-cuda118
-          name: PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8
+          tag_name: pytorch-${{ github.event.inputs.pytorch_version }}
+          name: PyTorch ${{ github.event.inputs.pytorch_version }}
           body: |
-            PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8 support
+            PyTorch ${{ github.event.inputs.pytorch_version }} 
             Built with architecture support for SM35, SM37, and newer architectures.
           draft: false
           prerelease: false

@@ -44,7 +44,7 @@ jobs:
       - name: Clone PyTorch
         if: steps.cache-pytorch.outputs.cache-hit != 'true'
         run: |
-          git clone -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+          git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
 
       - name: Create build script
         run: |

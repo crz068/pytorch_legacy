@@ -105,7 +105,6 @@ jobs:
       - name: Build PyTorch wheels with official builder image
         run: |
           docker run --rm \
-            --gpus all \
             -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
             -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
             -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \

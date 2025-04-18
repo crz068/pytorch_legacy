@@ -1,0 +1,122 @@
+name: Build and Push PyTorch Builder Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version_tag:
+        description: 'CUDA version for the builder image tag (e.g., 11.8)'
+        required: true
+        default: '11.8'
+        type: string
+  push:
+    branches:
+      - main # Or your default branch
+    paths:
+      - '.github/workflows/build-push-docker.yml' # Rebuild if workflow changes
+
+env:
+  # Define the base image name using your repository context
+  # Example: ghcr.io/yurhett/your-repo-name/pytorch-builder
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/pytorch-builder
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read      # To checkout the repository
+      packages: write     # To push packages (docker image) to GHCR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} # Use the default GITHUB_TOKEN
+
+      - name: Prepare Dockerfile and Variables
+        id: prep
+        run: |
+          CUDA_VERSION=${{ github.event.inputs.cuda_version_tag }}
+          CUDA_VERSION_NO_DOT=$(echo "${CUDA_VERSION}" | sed 's/\.//')
+          IMAGE_TAG="cuda${CUDA_VERSION_NO_DOT}"
+          echo "cuda_version_no_dot=${CUDA_VERSION_NO_DOT}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "Generating Dockerfile for CUDA ${CUDA_VERSION}"
+          # Dynamically create the Dockerfile content
+          cat > Dockerfile.builder << EOL
+          # Use the specific CUDA version from input
+          FROM nvidia/cuda:${CUDA_VERSION}.0-cudnn8-devel-ubuntu22.04
+
+          ENV DEBIAN_FRONTEND=noninteractive
+
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              build-essential \
+              ca-certificates \
+              cmake \
+              curl \
+              git \
+              libjpeg-dev \
+              libpng-dev \
+              libopenblas-dev \
+              ninja-build \
+              software-properties-common \
+              wget \
+              patchelf \
+              && rm -rf /var/lib/apt/lists/*
+
+          # Install Python versions from deadsnakes PPA
+          RUN apt-get update && \
+              apt-get install -y software-properties-common && \
+              add-apt-repository ppa:deadsnakes/ppa && \
+              apt-get update && \
+              apt-get install -y --no-install-recommends \
+              python3.8 python3.8-dev python3.8-venv \
+              python3.9 python3.9-dev python3.9-venv \
+              python3.10 python3.10-dev python3.10-venv \
+              python3.11 python3.11-dev python3.11-venv \
+              python3.12 python3.12-dev python3.12-venv \
+              && rm -rf /var/lib/apt/lists/*
+
+          # Install pip for all Python versions
+          RUN echo '#!/bin/bash \\n\
+              for version in 3.8 3.9 3.10 3.11 3.12; do \\n\
+                echo "Installing pip for Python \$version" \\n\
+                curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py \\n\
+                python\$version /tmp/get-pip.py --break-system-packages \\n\
+                python\$version -m pip --version \\n\
+              done' > /tmp/install_pip.sh && chmod +x /tmp/install_pip.sh && /tmp/install_pip.sh
+
+          # Install common Python build dependencies
+          RUN for version in 3.8 3.9 3.10 3.11 3.12; do \\
+              python\$version -m pip install --no-cache-dir wheel setuptools auditwheel; \\
+              done
+
+          # Set common environment variables for PyTorch build
+          ENV USE_MKLDNN=1 \
+              BUILD_TEST=0 \
+              USE_FBGEMM=1 \
+              CMAKE_POLICY_VERSION_MINIMUM=3.5
+
+          WORKDIR /workspace
+          EOL
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Use current directory as context
+          file: ./Dockerfile.builder # Specify the generated Dockerfile
+          push: true # Push the image to registry
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.prep.outputs.image_tag }} # e.g., ghcr.io/owner/repo/pytorch-builder:cuda118
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Clean up Dockerfile
+        run: rm Dockerfile.builder

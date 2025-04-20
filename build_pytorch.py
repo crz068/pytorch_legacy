@@ -23,7 +23,7 @@ def setup_cuda_env():
         "BUILD_BUNDLE_PTXAS": "1", # Bundle ptxas into the wheel
         
         # CUDA architecture list for 11.8
-        "TORCH_CUDA_ARCH_LIST": "3.5;3.7;5.0;6.0;7.0;7.5;8.0;8.6;9.0",
+        "TORCH_CUDA_ARCH_LIST": "3.5;3.7",
         
         # Package directories
         "WHEELHOUSE_DIR": "wheelhouse118",
@@ -64,6 +64,8 @@ def get_manywheel_path(pytorch_version):
     if (major > 2) or (major == 2 and minor >= 6):
         # For PyTorch 2.6+, manywheel is in .ci directory
         print(f"PyTorch {pytorch_version}: Using built-in manywheel directory")
+        # Set the proper permissions for the scripts
+        subprocess.run("chmod -R +x /pytorch/.ci/manywheel/*.sh", shell=True, check=True)
         return "/pytorch/.ci/manywheel"
     else:
         # For older versions, we need to clone pytorch/builder
@@ -74,6 +76,10 @@ def get_manywheel_path(pytorch_version):
         clone_cmd = f"git clone --depth=1 -b {branch} https://github.com/pytorch/builder.git /pytorch_builder"
         print(f"Running: {clone_cmd}")
         subprocess.run(clone_cmd, shell=True, check=True)
+        
+        # Set the proper permissions for the scripts
+        subprocess.run("chmod -R +x /pytorch_builder/manywheel/*.sh", shell=True, check=True)
+        print("Added executable permissions to build scripts")
         
         return "/pytorch_builder/manywheel"
 
@@ -100,7 +106,7 @@ def main():
         os.environ["DESIRED_PYTHON"] = py_version.strip()
         
         # Use build_common.sh from the manywheel directory
-        build_cmd = f"cd /pytorch && {manywheel_path}/build_common.sh"
+        build_cmd = f"cd /pytorch && bash {manywheel_path}/build_common.sh"
         print(f"Running: {build_cmd}")
         subprocess.run(build_cmd, shell=True, check=True)
     

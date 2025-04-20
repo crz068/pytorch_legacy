@@ -1,0 +1,102 @@
+name: Build Custom
+on:
+  workflow_dispatch:
+    inputs:
+      pytorch_version:
+        description: 'PyTorch version to build (e.g. 2.0.0, 2.1.0)'
+        required: true
+        type: string
+      python_versions:
+        description: 'Comma-separated list of Python versions to build (e.g. 3.9,3.10,3.11,3.12)'
+        required: false
+        default: '3.9,3.10,3.11,3.12'
+        type: string
+
+jobs:
+  build-all:
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: write
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 6
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup directories
+        run: |
+          mkdir -p _build/artifacts
+
+      - name: Set environment variables
+        run: |
+          echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
+          echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
+
+      # Cache PyTorch source code
+      - name: Cache PyTorch source
+        id: cache-pytorch
+        uses: actions/cache@v3
+        with:
+          path: pytorch
+          key: pytorch-${{ github.event.inputs.pytorch_version }}-source
+
+      # Clone PyTorch outside container if not cached
+      - name: Clone PyTorch
+        if: steps.cache-pytorch.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+
+      - name: Create build script
+        run: |
+          cp build_pytorch.py _build/build_pytorch.py
+          chmod +x _build/build_pytorch.py
+
+      - name: Build PyTorch wheels with official builder image
+        run: |
+          docker run --rm \
+            -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+            -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+            -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+            -v $(pwd)/pytorch:/pytorch \
+            -v $(pwd)/_build/artifacts:/artifacts \
+            -v $(pwd)/_build/build_pytorch.py:/build_pytorch.py \
+            pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
+            python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-versions '${{ github.event.inputs.python_versions }}'
+
+      - name: Copy wheels from container
+        run: |
+          # Create a temporary container to copy wheels from
+          CONTAINER_ID=$(docker create pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }})
+          docker cp $CONTAINER_ID:/remote/wheelhouse${{ env.CUDA_VERSION_NO_DOT }}/ _build/artifacts/
+          docker rm $CONTAINER_ID
+
+      - name: List artifacts
+        run: |
+          find _build/artifacts/ -name "*.whl" | sort
+
+      - name: Upload artifacts to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-wheels
+          path: _build/artifacts/**/*.whl
+          if-no-files-found: error
+          
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pytorch-${{ github.event.inputs.pytorch_version }}
+          name: PyTorch ${{ github.event.inputs.pytorch_version }}
+          body: |
+            PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8
+            Built with architecture support for SM35-SM90.
+            
+            Includes wheels for Python ${{ github.event.inputs.python_versions }}.
+            Build date: $(date +'%Y-%m-%d')
+          draft: false
+          prerelease: false
+          files: _build/artifacts/**/*.whl

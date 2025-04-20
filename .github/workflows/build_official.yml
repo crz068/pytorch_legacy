@@ -93,7 +93,7 @@ jobs:
             
             # Run the official manywheel build script
             cd /pytorch
-            SKIP_ALL_TESTS=1 /pytorch/.ci/pytorch/build.sh
+            SKIP_ALL_TESTS=1 /pytorch/.ci/manywheel/build.sh
           done
           
           # Copy all wheels to the artifacts directory

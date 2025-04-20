@@ -1,4 +1,5 @@
 name: Build Custom
+
 on:
   workflow_dispatch:
     inputs:
@@ -18,26 +19,18 @@ jobs:
     permissions: 
       contents: write
     steps:
-      # - name: Set Swap Space
-      #   uses: pierotofy/set-swap-space@master
-      #   with:
-      #     swap-size-gb: 6
-      - name: Get more space
-        uses: easimon/maximize-build-space@master
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
         with:
-          root-reserve-mb: 20480
-          swap-size-mb: 6000
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+          swap-size-gb: 6
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup directories
         run: |
           mkdir -p _build/artifacts
+          mkdir -p _build/wheelhouse118
 
       - name: Set environment variables
         run: |
@@ -59,10 +52,10 @@ jobs:
         run: |
           git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
 
-      - name: Create build script
+      - name: Display date and user info
         run: |
-          cp build_pytorch.py _build/build_pytorch.py
-          chmod +x _build/build_pytorch.py
+          echo "Current Date and Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Current User's Login: $USER"
 
       - name: Build PyTorch wheels with official builder image
         run: |
@@ -71,27 +64,25 @@ jobs:
             -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
             -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
             -v $(pwd)/pytorch:/pytorch \
-            -v $(pwd)/_build/artifacts:/artifacts \
-            -v $(pwd)/_build/build_pytorch.py:/build_pytorch.py \
+            -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
+            -v $(pwd)/build_pytorch.py:/build_pytorch.py \
             pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
             python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-versions '${{ github.event.inputs.python_versions }}'
 
-      - name: Copy wheels from container
+      - name: List and copy wheel files
         run: |
-          # Create a temporary container to copy wheels from
-          CONTAINER_ID=$(docker create pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }})
-          docker cp $CONTAINER_ID:/remote/wheelhouse${{ env.CUDA_VERSION_NO_DOT }}/ _build/artifacts/
-          docker rm $CONTAINER_ID
-
-      - name: List artifacts
-        run: |
-          find _build/artifacts/ -name "*.whl" | sort
+          echo "Wheels directory content:"
+          find _build/wheelhouse118 -type f -name "*.whl" | sort
+          
+          # Copy wheels to artifacts directory
+          mkdir -p _build/artifacts/
+          cp -v _build/wheelhouse118/*.whl _build/artifacts/ || echo "No wheel files found"
 
       - name: Upload artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
           name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-wheels
-          path: _build/artifacts/**/*.whl
+          path: _build/artifacts/*.whl
           if-no-files-found: error
           
       - name: Create GitHub Release
@@ -105,7 +96,7 @@ jobs:
             Built with architecture support for SM35-SM90.
             
             Includes wheels for Python ${{ github.event.inputs.python_versions }}.
-            Build date: $(date +'%Y-%m-%d')
+            Build date: $(date -u '+%Y-%m-%d')
           draft: false
           prerelease: false
-          files: _build/artifacts/**/*.whl
+          files: _build/artifacts/*.whl

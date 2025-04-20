@@ -24,7 +24,7 @@ def setup_cuda_env():
         "BUILD_BUNDLE_PTXAS": "1", # Bundle ptxas into the wheel
         
         # CUDA architecture list for 11.8
-        "TORCH_CUDA_ARCH_LIST": "3.5;3.7;5.0;6.0;7.0;7.5;8.0;8.6;9.0",
+        "TORCH_CUDA_ARCH_LIST": "3.5;3.7",
         
         # Package directories
         "WHEELHOUSE_DIR": "wheelhouse118",
@@ -132,7 +132,8 @@ def get_manywheel_path(pytorch_version):
         return "/pytorch/.ci/manywheel"
     else:
         # For older versions, we need to clone pytorch/builder
-        branch = f"release/{major}.{minor}"
+        # branch = f"release/{major}.{minor}"
+        branch = f"release/2.5"
         print(f"PyTorch {pytorch_version}: Cloning pytorch/builder repo branch {branch}")
         
         # Clone the builder repository with the correct branch

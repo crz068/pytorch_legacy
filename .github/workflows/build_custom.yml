@@ -19,11 +19,20 @@ jobs:
     permissions: 
       contents: write
     steps:
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
+ # - name: Set Swap Space
+      #   uses: pierotofy/set-swap-space@master
+      #   with:
+      #     swap-size-gb: 6
+      - name: Get more space
+        uses: easimon/maximize-build-space@master
         with:
-          swap-size-gb: 6
-
+          root-reserve-mb: 20480
+          swap-size-mb: 6000
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
       - name: Checkout code
         uses: actions/checkout@v4
 

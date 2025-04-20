@@ -24,7 +24,7 @@ def setup_cuda_env():
         "BUILD_BUNDLE_PTXAS": "1", # Bundle ptxas into the wheel
         
         # CUDA architecture list for 11.8
-        "TORCH_CUDA_ARCH_LIST": "3.5;3.7",
+        "TORCH_CUDA_ARCH_LIST": "3.5;3.7;5.0;6.0;7.0;7.5;8.0;8.6;9.0",
         
         # Package directories
         "WHEELHOUSE_DIR": "wheelhouse118",
@@ -59,7 +59,63 @@ def setup_cuda_env():
     os.environ["CUDA_VERSION"] = cuda_version
     os.environ["DESIRED_CUDA"] = cuda_version_nodot
     
+    # Setup dependency bundling (from build_cuda.sh for CUDA 11.8)
+    setup_dependency_bundling()
+    
     return cuda_version, cuda_version_nodot
+
+def setup_dependency_bundling():
+    """Setup the DEPS_LIST and DEPS_SONAME arrays for bundling dependencies into the wheel"""
+    print("Setting up dependency bundling for CUDA 11.8...")
+    
+    # Detect OS for libgomp path
+    os_name = subprocess.check_output("awk -F= '/^NAME/{print $2}' /etc/os-release", shell=True).decode().strip()
+    if "CentOS Linux" in os_name or "AlmaLinux" in os_name or "Red Hat Enterprise Linux" in os_name:
+        libgomp_path = "/usr/lib64/libgomp.so.1"
+    elif "Ubuntu" in os_name:
+        libgomp_path = "/usr/lib/x86_64-linux-gnu/libgomp.so.1"
+    else:
+        libgomp_path = "/usr/lib64/libgomp.so.1"  # Default
+    
+    # Base dependencies
+    deps_list = [libgomp_path]
+    deps_soname = ["libgomp.so.1"]
+    
+    # Add CUDA 11.8 specific dependencies
+    # For CUDA 11.8, we need to ship libcusparseLt.so.0 with the binary
+    if os.environ.get("USE_CUSPARSELT", "1") == "1":
+        deps_list.append("/usr/local/cuda/lib64/libcusparseLt.so.0")
+        deps_soname.append("libcusparseLt.so.0")
+    
+    # Add CUDA libraries for bundling
+    # These are the libraries that build_cuda.sh bundles for CUDA 11.8
+    cuda_libs = [
+        ("/usr/local/cuda/lib64/libcudnn_adv.so.9", "libcudnn_adv.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn_cnn.so.9", "libcudnn_cnn.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn_graph.so.9", "libcudnn_graph.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn_ops.so.9", "libcudnn_ops.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn_engines_runtime_compiled.so.9", "libcudnn_engines_runtime_compiled.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn_engines_precompiled.so.9", "libcudnn_engines_precompiled.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn_heuristic.so.9", "libcudnn_heuristic.so.9"),
+        ("/usr/local/cuda/lib64/libcudnn.so.9", "libcudnn.so.9"),
+        ("/usr/local/cuda/lib64/libcublas.so.11", "libcublas.so.11"),
+        ("/usr/local/cuda/lib64/libcublasLt.so.11", "libcublasLt.so.11"),
+        ("/usr/local/cuda/lib64/libcudart.so.11.0", "libcudart.so.11.0"),
+        ("/usr/local/cuda/lib64/libnvToolsExt.so.1", "libnvToolsExt.so.1"),
+        ("/usr/local/cuda/lib64/libnvrtc.so.11.2", "libnvrtc.so.11.2"),
+        ("/usr/local/cuda/lib64/libnvrtc-builtins.so.11.8", "libnvrtc-builtins.so.11.8"),
+    ]
+    
+    for lib_path, lib_soname in cuda_libs:
+        deps_list.append(lib_path)
+        deps_soname.append(lib_soname)
+    
+    # Set as environment variables
+    os.environ["DEPS_LIST"] = ";".join(deps_list)
+    os.environ["DEPS_SONAME"] = ";".join(deps_soname)
+    
+    print(f"DEPS_LIST set with {len(deps_list)} libraries")
+    print(f"DEPS_SONAME set with {len(deps_soname)} entries")
 
 def get_manywheel_path(pytorch_version):
     """
@@ -96,6 +152,10 @@ def main():
     parser.add_argument('--python-versions', default="3.9,3.10,3.11,3.12", help='Comma-separated list of Python versions')
     args = parser.parse_args()
     
+    # Print current user and timestamp
+    current_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"Build started by user: {os.environ.get('USER', 'unknown')} at {current_time} UTC")
+    
     cuda_version, cuda_version_nodot = setup_cuda_env()
     
     # Set PyTorch version-specific variables
@@ -110,20 +170,43 @@ def main():
     # Get correct manywheel path for this PyTorch version
     manywheel_path = get_manywheel_path(args.pytorch_version)
     
-    # Print current date and time for log purposes
-    current_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\nBuild started at {current_time} UTC\n")
-    
     # Build for each Python version
     python_versions = args.python_versions.split(',')
     for py_version in python_versions:
         print(f"\n==== Building for Python {py_version} ====\n")
         os.environ["DESIRED_PYTHON"] = py_version.strip()
         
-        # Use build_common.sh from the manywheel directory
-        build_cmd = f"cd /pytorch && bash {manywheel_path}/build_common.sh"
-        print(f"Running: {build_cmd}")
-        subprocess.run(build_cmd, shell=True, check=True)
+        # Create script wrapper to make sure arrays are properly passed to build_common.sh
+        with open("/tmp/build_wrapper.sh", "w") as f:
+            f.write("#!/bin/bash\n")
+            f.write("set -ex\n\n")
+            
+            # Export all environment variables
+            for key, value in os.environ.items():
+                # Skip some environment variables that might cause issues
+                if key in ['_', 'PWD', 'OLDPWD', 'LS_COLORS']:
+                    continue
+                
+                # Handle arrays specially
+                if key == "DEPS_LIST" or key == "DEPS_SONAME":
+                    values = value.split(";")
+                    f.write(f"{key}=(\n")
+                    for item in values:
+                        f.write(f'    "{item}"\n')
+                    f.write(")\n")
+                    f.write(f"export {key}\n")
+                else:
+                    f.write(f"export {key}=\"{value}\"\n")
+            
+            # Call build_common.sh
+            f.write(f"\ncd /pytorch && {manywheel_path}/build_common.sh\n")
+        
+        # Make it executable
+        subprocess.run("chmod +x /tmp/build_wrapper.sh", shell=True, check=True)
+        
+        # Run the wrapper script
+        print("Running build wrapper script...")
+        subprocess.run("/tmp/build_wrapper.sh", shell=True, check=True)
     
     print("\nBuild completed. Wheels are available in:", os.environ["PYTORCH_FINAL_PACKAGE_DIR"])
 

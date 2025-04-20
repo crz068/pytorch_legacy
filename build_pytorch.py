@@ -3,6 +3,7 @@ import os
 import sys
 import subprocess
 import argparse
+import datetime
 
 def setup_cuda_env():
     """Setup CUDA 11.8 specific environment variables based on build_cuda.sh"""
@@ -39,6 +40,12 @@ def setup_cuda_env():
         "BUILD_SPLIT_CUDA": "ON",
         "MAX_JOBS": "2",
         "SKIP_ALL_TESTS": "1",
+        
+        # Additional variables from build_common.sh
+        "BUILD_PYTHONLESS": "",  # Empty since we're building wheels
+        "USE_SPLIT_BUILD": "true",  # Use split build for faster compilation
+        "BUILD_DEBUG_INFO": "0",  # Don't build debug info by default
+        "DISABLE_RCCL": "0",  # Enable NCCL/RCCL
     }
     
     # Apply environment variables
@@ -96,8 +103,16 @@ def main():
     os.environ["PYTORCH_BUILD_NUMBER"] = "1"
     os.environ["OVERRIDE_PACKAGE_VERSION"] = f"{args.pytorch_version}+cu{cuda_version_nodot}"
     
+    # Set PYTORCH_ROOT - this is critical for build_common.sh
+    os.environ["PYTORCH_ROOT"] = "/pytorch"
+    print(f"Set PYTORCH_ROOT={os.environ['PYTORCH_ROOT']}")
+    
     # Get correct manywheel path for this PyTorch version
     manywheel_path = get_manywheel_path(args.pytorch_version)
+    
+    # Print current date and time for log purposes
+    current_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\nBuild started at {current_time} UTC\n")
     
     # Build for each Python version
     python_versions = args.python_versions.split(',')

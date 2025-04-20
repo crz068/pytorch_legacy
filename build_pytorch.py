@@ -4,8 +4,6 @@ import sys
 import subprocess
 import argparse
 import datetime
-import glob
-import shutil
 
 def setup_cuda_env():
     """Setup CUDA 11.8 specific environment variables based on build_cuda.sh"""
@@ -134,7 +132,8 @@ def get_manywheel_path(pytorch_version):
         return "/pytorch/.ci/manywheel"
     else:
         # For older versions, we need to clone pytorch/builder
-        branch = f"release/{major}.{minor}"
+        # branch = f"release/{major}.{minor}"
+        branch = f"release/2.5"
         print(f"PyTorch {pytorch_version}: Cloning pytorch/builder repo branch {branch}")
         
         # Clone the builder repository with the correct branch
@@ -147,66 +146,6 @@ def get_manywheel_path(pytorch_version):
         print("Added executable permissions to build scripts")
         
         return "/pytorch_builder/manywheel"
-
-def ensure_wheels_are_saved():
-    """Ensure wheel files are properly copied to the output directory"""
-    final_package_dir = os.environ.get("PYTORCH_FINAL_PACKAGE_DIR", "/remote/wheelhouse118")
-    wheelhouse_dir = os.environ.get("WHEELHOUSE_DIR", "wheelhouse118")
-    
-    print(f"\n=== Checking for wheel files ===")
-    
-    # Check internal wheel directory
-    internal_wheels = glob.glob(f"/{wheelhouse_dir}/*.whl")
-    if internal_wheels:
-        print(f"Found {len(internal_wheels)} wheel files in internal directory:")
-        for wheel in internal_wheels:
-            print(f"  - {wheel}")
-        
-        # Copy to final package directory
-        os.makedirs(final_package_dir, exist_ok=True)
-        for wheel in internal_wheels:
-            dest = os.path.join(final_package_dir, os.path.basename(wheel))
-            print(f"Copying {wheel} to {dest}")
-            shutil.copy(wheel, dest)
-    
-    # Check for wheels directly in /pytorch directory
-    pytorch_wheels = glob.glob("/pytorch/dist/*.whl")
-    if pytorch_wheels:
-        print(f"Found {len(pytorch_wheels)} wheel files in PyTorch dist directory:")
-        for wheel in pytorch_wheels:
-            print(f"  - {wheel}")
-        
-        # Copy to final package directory
-        os.makedirs(final_package_dir, exist_ok=True)
-        for wheel in pytorch_wheels:
-            dest = os.path.join(final_package_dir, os.path.basename(wheel))
-            print(f"Copying {wheel} to {dest}")
-            shutil.copy(wheel, dest)
-    
-    # Final check
-    final_wheels = glob.glob(f"{final_package_dir}/*.whl")
-    if final_wheels:
-        print(f"Successfully saved {len(final_wheels)} wheel files to {final_package_dir}")
-        for wheel in final_wheels:
-            print(f"  - {wheel}")
-    else:
-        print(f"WARNING: No wheel files found in {final_package_dir}!")
-        
-        # Last resort: find all wheel files in the system
-        print("Searching for wheel files across the system...")
-        all_wheels = subprocess.check_output("find / -name '*.whl' 2>/dev/null || true", shell=True).decode().strip().split("\n")
-        all_wheels = [w for w in all_wheels if w and "torch" in w]
-        if all_wheels:
-            print(f"Found {len(all_wheels)} torch wheel files in the system:")
-            for wheel in all_wheels:
-                print(f"  - {wheel}")
-                
-            # Copy to final package directory
-            for wheel in all_wheels:
-                if os.path.exists(wheel):
-                    dest = os.path.join(final_package_dir, os.path.basename(wheel))
-                    print(f"Copying {wheel} to {dest}")
-                    shutil.copy(wheel, dest)
 
 def main():
     parser = argparse.ArgumentParser(description='Build PyTorch wheels with CUDA 11.8')
@@ -268,17 +207,7 @@ def main():
         
         # Run the wrapper script
         print("Running build wrapper script...")
-        try:
-            subprocess.run("/tmp/build_wrapper.sh", shell=True, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Build process failed with error code {e.returncode}")
-            print("Attempting to save any produced wheel files...")
-        
-        # Ensure wheels are saved even if the build fails partially
-        ensure_wheels_are_saved()
-    
-    # Final check to ensure all wheels are saved before exiting
-    ensure_wheels_are_saved()
+        subprocess.run("/tmp/build_wrapper.sh", shell=True, check=True)
     
     print("\nBuild completed. Wheels are available in:", os.environ["PYTORCH_FINAL_PACKAGE_DIR"])
 

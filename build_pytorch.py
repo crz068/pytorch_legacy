@@ -131,15 +131,8 @@ def get_manywheel_path(pytorch_version):
         subprocess.run("chmod -R +x /pytorch/.ci/manywheel/*.sh", shell=True, check=True)
         return "/pytorch/.ci/manywheel"
     else:
-        # For older versions, we need to clone pytorch/builder
-        # branch = f"release/{major}.{minor}"
-        branch = f"release/2.5"
-        print(f"PyTorch {pytorch_version}: Cloning pytorch/builder repo branch {branch}")
-        
-        # Clone the builder repository with the correct branch
-        clone_cmd = f"git clone --depth=1 -b {branch} https://github.com/pytorch/builder.git /pytorch_builder"
-        print(f"Running: {clone_cmd}")
-        subprocess.run(clone_cmd, shell=True, check=True)
+        # For older versions, use the builder from mounted path
+        print(f"PyTorch {pytorch_version}: Using mounted builder from /pytorch_builder")
         
         # Set the proper permissions for the scripts
         subprocess.run("chmod -R +x /pytorch_builder/manywheel/*.sh", shell=True, check=True)
@@ -168,7 +161,7 @@ def main():
     os.environ["PYTORCH_ROOT"] = "/pytorch"
     print(f"Set PYTORCH_ROOT={os.environ['PYTORCH_ROOT']}")
     
-    # Get correct manywheel path for this PyTorch version
+    # Get manywheel path once outside the Python version loop
     manywheel_path = get_manywheel_path(args.pytorch_version)
     
     # Build for each Python version

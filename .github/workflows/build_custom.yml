@@ -72,7 +72,6 @@ jobs:
           
       # Always use release/2.5 branch for pre-2.6 PyTorch versions
       - name: Clone builder repository
-        if: env.NEEDS_BUILDER == 'true' && steps.cache-builder-restore.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 -b "release/2.5" https://github.com/pytorch/builder.git builder
 

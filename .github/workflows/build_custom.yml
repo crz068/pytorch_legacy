@@ -50,6 +50,7 @@ jobs:
       - name: Restore cached PyTorch source
         id: cache-pytorch-restore
         uses: actions/cache/restore@v4
+        if: always()
         with:
           path: pytorch
           key: pytorch-${{ github.event.inputs.pytorch_version }}-source
@@ -63,6 +64,7 @@ jobs:
       # Save PyTorch source code to cache (will save regardless of job success)
       - name: Save PyTorch source to cache
         uses: actions/cache/save@v4
+        if: always()
         with:
           path: pytorch
           key: ${{ steps.cache-pytorch-restore.outputs.cache-primary-key }}

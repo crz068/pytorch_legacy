@@ -16,13 +16,11 @@ on:
 jobs:
   build-all:
     runs-on: ubuntu-latest
+    timeout-minutes: 720
     permissions: 
       contents: write
     steps:
- # - name: Set Swap Space
-      #   uses: pierotofy/set-swap-space@master
-      #   with:
-      #     swap-size-gb: 6
+    
       - name: Get more space
         uses: easimon/maximize-build-space@master
         with:
@@ -33,6 +31,7 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
           remove-docker-images: 'true'
+          
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -47,19 +46,26 @@ jobs:
           echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
           echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
 
-      # Cache PyTorch source code
-      - name: Cache PyTorch source
-        id: cache-pytorch
-        uses: actions/cache@v3
+      # Restore PyTorch source code from cache
+      - name: Restore cached PyTorch source
+        id: cache-pytorch-restore
+        uses: actions/cache/restore@v4
         with:
           path: pytorch
           key: pytorch-${{ github.event.inputs.pytorch_version }}-source
 
       # Clone PyTorch outside container if not cached
       - name: Clone PyTorch
-        if: steps.cache-pytorch.outputs.cache-hit != 'true'
+        if: steps.cache-pytorch-restore.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+
+      # Save PyTorch source code to cache (will save regardless of job success)
+      - name: Save PyTorch source to cache
+        uses: actions/cache/save@v4
+        with:
+          path: pytorch
+          key: ${{ steps.cache-pytorch-restore.outputs.cache-primary-key }}
 
       - name: Display date and user info
         run: |
@@ -77,7 +83,13 @@ jobs:
             -v $(pwd)/build_pytorch.py:/build_pytorch.py \
             pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
             python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-versions '${{ github.event.inputs.python_versions }}'
-
+      
+      - name: Save PyTorch source to cache
+        uses: actions/cache/save@v4
+        with:
+          path: pytorch
+          key: ${{ steps.cache-pytorch-restore.outputs.cache-primary-key }}
+          
       - name: List and copy wheel files
         run: |
           echo "Wheels directory content:"

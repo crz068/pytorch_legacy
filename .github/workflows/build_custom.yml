@@ -68,6 +68,12 @@ jobs:
         with:
           path: pytorch
           key: ${{ steps.cache-pytorch-restore.outputs.cache-primary-key }}
+          
+      # Always use release/2.5 branch for pre-2.6 PyTorch versions
+      - name: Clone builder repository
+        if: env.NEEDS_BUILDER == 'true' && steps.cache-builder-restore.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 -b "release/2.5" https://github.com/pytorch/builder.git _build/builder
 
       - name: Display date and user info
         run: |
@@ -81,6 +87,7 @@ jobs:
             -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
             -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
             -v $(pwd)/pytorch:/pytorch \
+            -v $(pwd)/_build/builder:/pytorch_builder \
             -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
             -v $(pwd)/build_pytorch.py:/build_pytorch.py \
             pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \

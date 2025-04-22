@@ -143,12 +143,13 @@ def get_manywheel_path(pytorch_version):
 def main():
     parser = argparse.ArgumentParser(description='Build PyTorch wheels with CUDA 11.8')
     parser.add_argument('--pytorch-version', required=True, help='PyTorch version to build')
-    parser.add_argument('--python-versions', default="3.9,3.10,3.11,3.12", help='Comma-separated list of Python versions')
+    parser.add_argument('--python-version', required=True, help='Python version to build for')
     args = parser.parse_args()
     
     # Print current user and timestamp
     current_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     print(f"Build started by user: {os.environ.get('USER', 'unknown')} at {current_time} UTC")
+    print(f"Building for Python {args.python_version} and PyTorch {args.pytorch_version}")
     
     cuda_version, cuda_version_nodot = setup_cuda_env()
     
@@ -161,48 +162,45 @@ def main():
     os.environ["PYTORCH_ROOT"] = "/pytorch"
     print(f"Set PYTORCH_ROOT={os.environ['PYTORCH_ROOT']}")
     
-    # Get manywheel path once outside the Python version loop
+    # Set the Python version to build for
+    os.environ["DESIRED_PYTHON"] = args.python_version.strip()
+    
+    # Get manywheel path
     manywheel_path = get_manywheel_path(args.pytorch_version)
     
-    # Build for each Python version
-    python_versions = args.python_versions.split(',')
-    for py_version in python_versions:
-        print(f"\n==== Building for Python {py_version} ====\n")
-        os.environ["DESIRED_PYTHON"] = py_version.strip()
+    # Create script wrapper to make sure arrays are properly passed to build_common.sh
+    with open("/tmp/build_wrapper.sh", "w") as f:
+        f.write("#!/bin/bash\n")
+        f.write("set -ex\n\n")
         
-        # Create script wrapper to make sure arrays are properly passed to build_common.sh
-        with open("/tmp/build_wrapper.sh", "w") as f:
-            f.write("#!/bin/bash\n")
-            f.write("set -ex\n\n")
+        # Export all environment variables
+        for key, value in os.environ.items():
+            # Skip some environment variables that might cause issues
+            if key in ['_', 'PWD', 'OLDPWD', 'LS_COLORS']:
+                continue
             
-            # Export all environment variables
-            for key, value in os.environ.items():
-                # Skip some environment variables that might cause issues
-                if key in ['_', 'PWD', 'OLDPWD', 'LS_COLORS']:
-                    continue
-                
-                # Handle arrays specially
-                if key == "DEPS_LIST" or key == "DEPS_SONAME":
-                    values = value.split(";")
-                    f.write(f"{key}=(\n")
-                    for item in values:
-                        f.write(f'    "{item}"\n')
-                    f.write(")\n")
-                    f.write(f"export {key}\n")
-                else:
-                    f.write(f"export {key}=\"{value}\"\n")
-            
-            # Call build_common.sh
-            f.write(f"\ncd /pytorch && {manywheel_path}/build_common.sh\n")
+            # Handle arrays specially
+            if key == "DEPS_LIST" or key == "DEPS_SONAME":
+                values = value.split(";")
+                f.write(f"{key}=(\n")
+                for item in values:
+                    f.write(f'    "{item}"\n')
+                f.write(")\n")
+                f.write(f"export {key}\n")
+            else:
+                f.write(f"export {key}=\"{value}\"\n")
         
-        # Make it executable
-        subprocess.run("chmod +x /tmp/build_wrapper.sh", shell=True, check=True)
-        
-        # Run the wrapper script
-        print("Running build wrapper script...")
-        subprocess.run("/tmp/build_wrapper.sh", shell=True, check=True)
+        # Call build_common.sh
+        f.write(f"\ncd /pytorch && {manywheel_path}/build_common.sh\n")
     
-    print("\nBuild completed. Wheels are available in:", os.environ["PYTORCH_FINAL_PACKAGE_DIR"])
+    # Make it executable
+    subprocess.run("chmod +x /tmp/build_wrapper.sh", shell=True, check=True)
+    
+    # Run the wrapper script
+    print(f"Running build wrapper script for Python {args.python_version}...")
+    subprocess.run("/tmp/build_wrapper.sh", shell=True, check=True)
+    
+    print(f"\nBuild completed for Python {args.python_version}. Wheels are available in: {os.environ['PYTORCH_FINAL_PACKAGE_DIR']}")
 
 if __name__ == "__main__":
     main()

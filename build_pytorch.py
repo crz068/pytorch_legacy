@@ -55,7 +55,7 @@ def setup_cuda_env():
         "BUILD_BUNDLE_PTXAS": "1", # Bundle ptxas into the wheel
         
         # CUDA architecture list for 11.8
-        "TORCH_CUDA_ARCH_LIST": "3.5;3.7;5.0;5.2;6.0;6.1;7.0;7.5;8.0;8.6;9.0",
+        "TORCH_CUDA_ARCH_LIST": "3.5;3.7",
         
         # Package directories
         "WHEELHOUSE_DIR": "wheelhouse118",

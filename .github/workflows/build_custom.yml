@@ -1,4 +1,4 @@
-name: Build Custom
+name: Build Custom PyTorch
 
 on:
   workflow_dispatch:
@@ -20,7 +20,6 @@ jobs:
     permissions: 
       contents: write
     steps:
-    
       - name: Get more space
         uses: easimon/maximize-build-space@master
         with:
@@ -50,7 +49,6 @@ jobs:
       - name: Restore cached PyTorch source
         id: cache-pytorch-restore
         uses: actions/cache/restore@v4
-        if: always()
         with:
           path: pytorch
           key: pytorch-${{ github.event.inputs.pytorch_version }}-source
@@ -61,11 +59,10 @@ jobs:
         run: |
           git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
 
-      # Save PyTorch source code to cache (will save regardless of job success)
-      - name: Save PyTorch source to cache
+      # Save PyTorch source code to cache
+      - name: Save PyTorch source to cache (initial)
         if: steps.cache-pytorch-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
-        # if: always()
         with:
           path: pytorch
           key: ${{ steps.cache-pytorch-restore.outputs.cache-primary-key }}
@@ -80,25 +77,29 @@ jobs:
           echo "Current Date and Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
           echo "Current User's Login: $USER"
 
-      - name: Build PyTorch wheels with official builder image
+      # Build each Python version in a separate Docker container
+      - name: Build PyTorch wheels for each Python version
         run: |
-          docker run --rm \
-            -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
-            -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
-            -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
-            -v $(pwd)/pytorch:/pytorch \
-            -v $(pwd)/builder:/pytorch_builder \
-            -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
-            -v $(pwd)/build_pytorch.py:/build_pytorch.py \
-            pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
-            python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-versions '${{ github.event.inputs.python_versions }}'
-      
-      - name: Save PyTorch source to cache
-        uses: actions/cache/save@v4
-        with:
-          path: pytorch
-          key: ${{ steps.cache-pytorch-restore.outputs.cache-primary-key }}
+          PYTHON_VERSIONS=($(echo "${{ github.event.inputs.python_versions }}" | tr ',' ' '))
           
+          for PY_VERSION in "${PYTHON_VERSIONS[@]}"; do
+            echo "=== Building for Python ${PY_VERSION} ==="
+            
+            # Start a fresh Docker container for each Python version
+            docker run --rm \
+              -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+              -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+              -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+              -v $(pwd)/pytorch:/pytorch \
+              -v $(pwd)/builder:/pytorch_builder \
+              -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
+              -v $(pwd)/build_pytorch.py:/build_pytorch.py \
+              pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
+              python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-version ${PY_VERSION}
+            
+            echo "=== Completed build for Python ${PY_VERSION} ==="
+          done
+      
       - name: List and copy wheel files
         run: |
           echo "Wheels directory content:"

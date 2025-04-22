@@ -1,0 +1,149 @@
+name: Build Custom PyTorch with ccache
+
+on:
+  workflow_dispatch:
+    inputs:
+      pytorch_version:
+        description: 'PyTorch version to build (e.g. 2.0.0, 2.1.0)'
+        required: true
+        type: string
+      python_versions:
+        description: 'Comma-separated list of Python versions to build (e.g. 3.9,3.10,3.11,3.12)'
+        required: false
+        default: '3.9,3.10,3.11,3.12'
+        type: string
+
+jobs:
+  build-all:
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: write
+    steps:
+      - name: Get more space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 20480
+          swap-size-mb: 6000
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup directories
+        run: |
+          mkdir -p _build/artifacts
+          mkdir -p _build/wheelhouse118
+          mkdir -p _build/ccache
+
+      - name: Set environment variables
+        run: |
+          echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
+          echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$(pwd)/_build/ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=25G" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+
+      # 恢复 ccache 缓存，使用 PyTorch 版本作为键
+      - name: Restore ccache
+        id: restore-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}
+
+      # 如果没有缓存则克隆 PyTorch
+      - name: Clone PyTorch
+        if: steps.cache-pytorch-restore.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+          
+      # 始终使用 release/2.5 分支构建 pre-2.6 PyTorch 版本
+      - name: Clone builder repository
+        run: |
+          git clone --depth=1 -b "release/2.5" https://github.com/pytorch/builder.git builder
+
+      - name: Display date and user info
+        run: |
+          df -h
+          echo "Current Date and Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Current User's Login: $USER"
+          echo "Initial ccache stats:"
+          ls -la _build/ccache || true
+          du -sh _build/ccache || true
+
+      # 为每个 Python 版本构建 PyTorch wheel
+      - name: Build PyTorch wheels for each Python version
+        run: |
+          PYTHON_VERSIONS=($(echo "${{ github.event.inputs.python_versions }}" | tr ',' ' '))
+          
+          for PY_VERSION in "${PYTHON_VERSIONS[@]}"; do
+            echo "=== Building for Python ${PY_VERSION} ==="
+            
+            # 为每个 Python 版本启动新的 Docker 容器
+            docker run --rm \
+              -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+              -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+              -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+              -e CCACHE_DIR=/ccache \
+              -e CCACHE_MAXSIZE=${{ env.CCACHE_MAXSIZE }} \
+              -e CCACHE_COMPRESS=${{ env.CCACHE_COMPRESS }} \
+              -e CCACHE_COMPRESSLEVEL=${{ env.CCACHE_COMPRESSLEVEL }} \
+              -e USE_CCACHE=1 \
+              -e CMAKE_C_COMPILER_LAUNCHER=ccache \
+              -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -v $(pwd)/pytorch:/pytorch \
+              -v $(pwd)/builder:/pytorch_builder \
+              -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
+              -v $(pwd)/_build/ccache:/ccache \
+              -v $(pwd)/build_pytorch.py:/build_pytorch.py \
+              pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
+              python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-version ${PY_VERSION}
+            df -h
+            echo "=== Completed build for Python ${PY_VERSION} ==="
+            echo "ccache stats after Python ${PY_VERSION} build:"
+            du -sh _build/ccache
+          done
+
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}
+      
+      - name: List and copy wheel files
+        run: |
+          echo "Wheels directory content:"
+          find _build/wheelhouse118 -type f -name "*.whl" | sort
+          
+          # 复制 wheel 文件到 artifacts 目录
+          mkdir -p _build/artifacts/
+          cp -v _build/wheelhouse118/*.whl _build/artifacts/ || echo "No wheel files found"
+
+      - name: Upload artifacts to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-wheels
+          path: _build/artifacts/*.whl
+          if-no-files-found: error
+          
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pytorch-${{ github.event.inputs.pytorch_version }}
+          name: PyTorch ${{ github.event.inputs.pytorch_version }}
+          body: |
+            PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8
+            Built with architecture support for SM35-SM90.
+            
+            Includes wheels for Python ${{ github.event.inputs.python_versions }}.
+            Build date: $(date -u '+%Y-%m-%d')
+          draft: false
+          prerelease: false
+          files: _build/artifacts/*.whl

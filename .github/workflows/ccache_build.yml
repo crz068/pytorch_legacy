@@ -113,7 +113,7 @@ jobs:
           done
 
       - name: Save ccache
-        if: always()  # 无论之前的步骤是否成功，总是执行此步骤
+        if: success() || failure() || cancelled()
         uses: actions/cache/save@v4
         with:
           path: _build/ccache

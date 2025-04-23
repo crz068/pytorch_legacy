@@ -56,6 +56,8 @@ jobs:
         with:
           path: _build/ccache
           key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}
+          restore-keys: |
+            ccache-pytorch-
 
       # 如果没有缓存则克隆 PyTorch
       - name: Clone PyTorch
@@ -111,6 +113,7 @@ jobs:
           done
 
       - name: Save ccache
+        if: always()  # 无论之前的步骤是否成功，总是执行此步骤
         uses: actions/cache/save@v4
         with:
           path: _build/ccache

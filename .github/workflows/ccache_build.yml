@@ -45,7 +45,7 @@ jobs:
           echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
           echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
           echo "CCACHE_DIR=$(pwd)/_build/ccache" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=25G" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=9.8G" >> $GITHUB_ENV
           echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
           echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
           # Generate a unique cache suffix based on run ID and date
@@ -65,9 +65,7 @@ jobs:
       # Clone PyTorch (fixed condition check)
       - name: Clone PyTorch
         run: |
-          if [ ! -d "pytorch" ]; then
             git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
-          fi
           
       # Always use release/2.5 branch for building
       - name: Clone builder repository

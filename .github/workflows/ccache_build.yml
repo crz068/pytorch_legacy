@@ -48,24 +48,28 @@ jobs:
           echo "CCACHE_MAXSIZE=25G" >> $GITHUB_ENV
           echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
           echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+          # Generate a unique cache suffix based on run ID and date
+          echo "CACHE_SUFFIX=$(date +%s)" >> $GITHUB_ENV
 
-      # 恢复 ccache 缓存，使用 PyTorch 版本作为键
+      # Use a unique cache key with run ID to avoid collisions
       - name: Restore ccache
         id: restore-ccache
         uses: actions/cache/restore@v4
         with:
           path: _build/ccache
-          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}-${{ github.run_id }}
           restore-keys: |
+            ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}-
             ccache-pytorch-
 
-      # 如果没有缓存则克隆 PyTorch
+      # Clone PyTorch (fixed condition check)
       - name: Clone PyTorch
-        if: steps.cache-pytorch-restore.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+          if [ ! -d "pytorch" ]; then
+            git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+          fi
           
-      # 始终使用 release/2.5 分支构建 pre-2.6 PyTorch 版本
+      # Always use release/2.5 branch for building
       - name: Clone builder repository
         run: |
           git clone --depth=1 -b "release/2.5" https://github.com/pytorch/builder.git builder
@@ -79,7 +83,7 @@ jobs:
           ls -la _build/ccache || true
           du -sh _build/ccache || true
 
-      # 为每个 Python 版本构建 PyTorch wheel
+      # Build PyTorch wheels for each Python version
       - name: Build PyTorch wheels for each Python version
         run: |
           PYTHON_VERSIONS=($(echo "${{ github.event.inputs.python_versions }}" | tr ',' ' '))
@@ -87,7 +91,7 @@ jobs:
           for PY_VERSION in "${PYTHON_VERSIONS[@]}"; do
             echo "=== Building for Python ${PY_VERSION} ==="
             
-            # 为每个 Python 版本启动新的 Docker 容器
+            # Launch a new Docker container for each Python version
             docker run --rm \
               -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
               -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
@@ -112,19 +116,20 @@ jobs:
             du -sh _build/ccache
           done
 
+      # Use the unique cache key for saving
       - name: Save ccache
         if: success() || failure() || cancelled()
         uses: actions/cache/save@v4
         with:
           path: _build/ccache
-          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-cuda${{ env.CUDA_VERSION_NO_DOT }}-${{ github.run_id }}
       
       - name: List and copy wheel files
         run: |
           echo "Wheels directory content:"
           find _build/wheelhouse118 -type f -name "*.whl" | sort
           
-          # 复制 wheel 文件到 artifacts 目录
+          # Copy wheel files to artifacts directory
           mkdir -p _build/artifacts/
           cp -v _build/wheelhouse118/*.whl _build/artifacts/ || echo "No wheel files found"
 

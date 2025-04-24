@@ -125,6 +125,7 @@ jobs:
       - name: List and copy wheel files
         if: success() || failure() || cancelled()
         run: |
+          df -h
           echo "Wheels directory content:"
           find _build/wheelhouse118 -type f -name "*.whl" | sort
           

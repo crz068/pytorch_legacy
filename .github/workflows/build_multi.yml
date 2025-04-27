@@ -138,6 +138,7 @@ jobs:
             -e USE_CCACHE=1 \
             -e CMAKE_C_COMPILER_LAUNCHER=ccache \
             -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -e CMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -v $(pwd)/pytorch:/pytorch \
             -v $(pwd)/builder:/pytorch_builder \
             -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
@@ -184,7 +185,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ${{ fromJson(needs.check-cache.outputs.cache_hit == 'true' ? needs.check-cache.outputs.python_versions : needs.check-cache.outputs.remaining_python) }}
+        python_version: ${{ needs.check-cache.outputs.cache_hit == 'true' && fromJson(needs.check-cache.outputs.python_versions) || fromJson(needs.check-cache.outputs.remaining_python) }}
     steps:
       - name: Get more space
         uses: easimon/maximize-build-space@master
@@ -264,6 +265,7 @@ jobs:
             -e USE_CCACHE=1 \
             -e CMAKE_C_COMPILER_LAUNCHER=ccache \
             -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -e CMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -v $(pwd)/pytorch:/pytorch \
             -v $(pwd)/builder:/pytorch_builder \
             -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \

@@ -57,7 +57,7 @@ jobs:
   # This job runs only when cache is cold - build the first Python version
   build-first-python:
     needs: check-cache
-    if: needs.check-cache.outputs.cache_hit != ''
+    if: needs.check-cache.outputs.cache_hit == ''
     runs-on: ubuntu-latest
     steps:
       - name: Get more space
@@ -182,7 +182,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ${{ needs.check-cache.outputs.cache_hit == '' && fromJson(needs.check-cache.outputs.python_versions) || fromJson(needs.check-cache.outputs.remaining_python) }}
+        python_version: ${{ needs.check-cache.outputs.cache_hit != '' && fromJson(needs.check-cache.outputs.python_versions) || fromJson(needs.check-cache.outputs.remaining_python) }}
     steps:
       - name: Get more space
         uses: easimon/maximize-build-space@master

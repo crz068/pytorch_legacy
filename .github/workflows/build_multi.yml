@@ -175,6 +175,8 @@ jobs:
 
   # Build remaining Python versions in parallel
   build-remaining:
+    if: |
+      always()
     needs: [check-cache, build-first-python]
     runs-on: ubuntu-latest
     strategy:
@@ -313,7 +315,7 @@ jobs:
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: pytorch-${{ github.event.inputs.pytorch_version }}-cu*-py*-wheel
+          pattern: "*.whl"
           path: _build/artifacts
           merge-multiple: true
       

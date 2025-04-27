@@ -57,7 +57,7 @@ jobs:
   # This job runs only when cache is cold - build the first Python version
   build-first-python:
     needs: check-cache
-    if: needs.check-cache.outputs.cache_hit != 'true'
+    if: needs.check-cache.outputs.cache_hit != ''
     runs-on: ubuntu-latest
     steps:
       - name: Get more space
@@ -177,14 +177,15 @@ jobs:
   build-remaining:
     needs: [check-cache, build-first-python]
     if: |
-      always() && 
-      (needs.check-cache.outputs.cache_hit != 'true' && needs.build-first-python.result == 'success') || 
-      needs.check-cache.outputs.cache_hit == 'true'
+      always() 
+      # && 
+      # (needs.check-cache.outputs.cache_hit != 'true' && needs.build-first-python.result == 'success') || 
+      # needs.check-cache.outputs.cache_hit == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python_version: ${{ needs.check-cache.outputs.cache_hit == 'true' && fromJson(needs.check-cache.outputs.python_versions) || fromJson(needs.check-cache.outputs.remaining_python) }}
+        python_version: ${{ needs.check-cache.outputs.cache_hit == '' && fromJson(needs.check-cache.outputs.python_versions) || fromJson(needs.check-cache.outputs.remaining_python) }}
     steps:
       - name: Get more space
         uses: easimon/maximize-build-space@master
@@ -303,10 +304,11 @@ jobs:
   release:
     needs: [check-cache, build-first-python, build-remaining]
     if: |
-      always() && 
-      (needs.check-cache.result == 'success') && 
-      (needs.check-cache.outputs.cache_hit == 'true' || needs.build-first-python.result == 'success') &&
-      (needs.build-remaining.result == 'success' || needs.build-remaining.result == 'skipped')
+      always() 
+      # && 
+      # (needs.check-cache.result == 'success') && 
+      # (needs.check-cache.outputs.cache_hit == 'true' || needs.build-first-python.result == 'success') &&
+      # (needs.build-remaining.result == 'success' || needs.build-remaining.result == 'skipped')
     runs-on: ubuntu-latest
     permissions: 
       contents: write

@@ -176,8 +176,6 @@ jobs:
   # Build remaining Python versions in parallel
   build-remaining:
     needs: [check-cache, build-first-python]
-    if: |
-      always() 
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

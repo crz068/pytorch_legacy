@@ -138,6 +138,7 @@ jobs:
             -e CMAKE_C_COMPILER_LAUNCHER=ccache \
             -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -e CMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -e CMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -v $(pwd)/pytorch:/pytorch \
             -v $(pwd)/builder:/pytorch_builder \
             -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
@@ -263,6 +264,7 @@ jobs:
             -e CMAKE_C_COMPILER_LAUNCHER=ccache \
             -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -e CMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -e CMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -v $(pwd)/pytorch:/pytorch \
             -v $(pwd)/builder:/pytorch_builder \
             -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \

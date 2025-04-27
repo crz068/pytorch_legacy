@@ -161,10 +161,10 @@ jobs:
       - name: Copy wheel files to artifacts
         run: |
           echo "Wheels directory content for Python ${{ needs.check-cache.outputs.first_python }}:"
-          find _build/wheelhouse118 -type f -name "*py${{ needs.check-cache.outputs.first_python }}*.whl" | sort
+          find _build/wheelhouse118 -type f -name "*.whl" | sort
           
           mkdir -p _build/artifacts/
-          cp -v _build/wheelhouse118/*py${{ needs.check-cache.outputs.first_python }}*.whl _build/artifacts/ || echo "No wheel files found"
+          cp -v _build/wheelhouse118/*.whl _build/artifacts/ || echo "No wheel files found"
 
       - name: Upload wheel artifacts for Python ${{ needs.check-cache.outputs.first_python }}
         uses: actions/upload-artifact@v4
@@ -284,10 +284,10 @@ jobs:
       - name: Copy wheel files to artifacts
         run: |
           echo "Wheels directory content for Python ${{ matrix.python_version }}:"
-          find _build/wheelhouse118 -type f -name "*py${{ matrix.python_version }}*.whl" | sort
+          find _build/wheelhouse118 -type f -name "*.whl" | sort
           
           mkdir -p _build/artifacts/
-          cp -v _build/wheelhouse118/*py${{ matrix.python_version }}*.whl _build/artifacts/ || echo "No wheel files found"
+          cp -v _build/wheelhouse118/*.whl _build/artifacts/ || echo "No wheel files found"
 
       - name: Upload wheel artifacts for Python ${{ matrix.python_version }}
         uses: actions/upload-artifact@v4

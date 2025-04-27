@@ -27,23 +27,22 @@ jobs:
       
       - id: set-matrix
         run: |
-          # Parse Python versions into JSON arrays
-          PYTHON_VERSIONS_LIST=($(echo "${{ github.event.inputs.python_versions }}" | tr ',' ' '))
-          PYTHON_VERSIONS=$(echo "${{ github.event.inputs.python_versions }}" | jq -R -s -c 'split(",") | map(select(length > 0))')
-          echo "python_versions=${PYTHON_VERSIONS}" >> $GITHUB_OUTPUT
+          # Simple direct conversion to JSON array - no intermediate processing
+          PYTHON_VERSIONS='${{ github.event.inputs.python_versions }}'
+          # Create JSON array for all python versions directly
+          echo "python_versions=[\"$(echo $PYTHON_VERSIONS | sed 's/,/\",\"/g')\"]" >> $GITHUB_OUTPUT
           
-          # Get first Python version
-          FIRST_PYTHON="${PYTHON_VERSIONS_LIST[0]}"
-          echo "first_python=${FIRST_PYTHON}" >> $GITHUB_OUTPUT
+          # First Python version
+          FIRST_PYTHON=$(echo $PYTHON_VERSIONS | cut -d, -f1)
+          echo "first_python=$FIRST_PYTHON" >> $GITHUB_OUTPUT
           
-          # Get remaining Python versions as JSON array
-          if [ ${#PYTHON_VERSIONS_LIST[@]} -gt 1 ]; then
-            REMAINING=("${PYTHON_VERSIONS_LIST[@]:1}")
-            REMAINING_JSON=$(printf '%s\n' "${REMAINING[@]}" | jq -R . | jq -s .)
+          # Remaining Python versions
+          if [[ "$PYTHON_VERSIONS" == *","* ]]; then
+            REMAINING=$(echo $PYTHON_VERSIONS | cut -d, -f2-)
+            echo "remaining_python=[\"$(echo $REMAINING | sed 's/,/\",\"/g')\"]" >> $GITHUB_OUTPUT
           else
-            REMAINING_JSON=[]
+            echo "remaining_python=[]" >> $GITHUB_OUTPUT
           fi
-          echo "remaining_python=${REMAINING_JSON}" >> $GITHUB_OUTPUT
 
       # Check if ccache already exists
       - id: check-cache

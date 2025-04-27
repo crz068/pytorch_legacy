@@ -52,7 +52,6 @@ jobs:
           key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-check-${{ github.run_id }}
           restore-keys: |
             ccache-pytorch-${{ github.event.inputs.pytorch_version }}-
-            ccache-pytorch-
   
   # This job runs only when cache is cold - build the first Python version
   build-first-python:

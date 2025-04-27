@@ -178,9 +178,6 @@ jobs:
     needs: [check-cache, build-first-python]
     if: |
       always() 
-      # && 
-      # (needs.check-cache.outputs.cache_hit != 'true' && needs.build-first-python.result == 'success') || 
-      # needs.check-cache.outputs.cache_hit == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -305,10 +302,6 @@ jobs:
     needs: [check-cache, build-first-python, build-remaining]
     if: |
       always() 
-      # && 
-      # (needs.check-cache.result == 'success') && 
-      # (needs.check-cache.outputs.cache_hit == 'true' || needs.build-first-python.result == 'success') &&
-      # (needs.build-remaining.result == 'success' || needs.build-remaining.result == 'skipped')
     runs-on: ubuntu-latest
     permissions: 
       contents: write

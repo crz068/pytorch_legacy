@@ -1,0 +1,343 @@
+name: Build Custom PyTorch with ccache
+
+on:
+  workflow_dispatch:
+    inputs:
+      pytorch_version:
+        description: 'PyTorch version to build (e.g. 2.0.0, 2.1.0)'
+        required: true
+        type: string
+      python_versions:
+        description: 'Comma-separated list of Python versions to build (e.g. 3.9,3.10,3.11,3.12)'
+        required: false
+        default: '3.9,3.10,3.11,3.12'
+        type: string
+
+jobs:
+  check-cache:
+    runs-on: ubuntu-latest
+    outputs:
+      cache_hit: ${{ steps.check-cache.outputs.cache-hit }}
+      python_versions: ${{ steps.set-matrix.outputs.python_versions }}
+      first_python: ${{ steps.set-matrix.outputs.first_python }}
+      remaining_python: ${{ steps.set-matrix.outputs.remaining_python }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - id: set-matrix
+        run: |
+          # Parse Python versions into JSON arrays
+          PYTHON_VERSIONS_LIST=($(echo "${{ github.event.inputs.python_versions }}" | tr ',' ' '))
+          PYTHON_VERSIONS=$(echo "${{ github.event.inputs.python_versions }}" | jq -R -s -c 'split(",") | map(select(length > 0))')
+          echo "python_versions=${PYTHON_VERSIONS}" >> $GITHUB_OUTPUT
+          
+          # Get first Python version
+          FIRST_PYTHON="${PYTHON_VERSIONS_LIST[0]}"
+          echo "first_python=${FIRST_PYTHON}" >> $GITHUB_OUTPUT
+          
+          # Get remaining Python versions as JSON array
+          if [ ${#PYTHON_VERSIONS_LIST[@]} -gt 1 ]; then
+            REMAINING=("${PYTHON_VERSIONS_LIST[@]:1}")
+            REMAINING_JSON=$(printf '%s\n' "${REMAINING[@]}" | jq -R . | jq -s .)
+          else
+            REMAINING_JSON=[]
+          fi
+          echo "remaining_python=${REMAINING_JSON}" >> $GITHUB_OUTPUT
+
+      # Check if ccache already exists
+      - id: check-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-check-${{ github.run_id }}
+          restore-keys: |
+            ccache-pytorch-${{ github.event.inputs.pytorch_version }}-
+            ccache-pytorch-
+  
+  # This job runs only when cache is cold - build the first Python version
+  build-first-python:
+    needs: check-cache
+    if: needs.check-cache.outputs.cache_hit != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get more space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 20480
+          swap-size-mb: 6000
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup directories
+        run: |
+          mkdir -p _build/artifacts
+          mkdir -p _build/wheelhouse118
+          mkdir -p _build/ccache
+
+      - name: Set environment variables
+        run: |
+          echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
+          echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$(pwd)/_build/ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=9.8G" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=${{ needs.check-cache.outputs.first_python }}" >> $GITHUB_ENV
+
+      # Restore ccache if available
+      - name: Restore ccache
+        id: restore-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-first-${{ github.run_id }}
+          restore-keys: |
+            ccache-pytorch-${{ github.event.inputs.pytorch_version }}-
+            ccache-pytorch-
+
+      # Clone PyTorch for this Python version
+      - name: Clone PyTorch
+        run: |
+          git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+          
+      # Clone builder repository
+      - name: Clone builder repository
+        run: |
+          git clone --depth=1 -b "release/2.5" https://github.com/pytorch/builder.git builder
+
+      - name: Display build info
+        run: |
+          df -h
+          echo "Current Date and Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Building first Python version: ${{ needs.check-cache.outputs.first_python }}"
+          echo "Initial ccache stats:"
+          du -sh _build/ccache || true
+
+      # Build PyTorch wheel for first Python version
+      - name: Build PyTorch wheel for Python ${{ needs.check-cache.outputs.first_python }}
+        run: |
+          echo "=== Building for Python ${{ needs.check-cache.outputs.first_python }} ==="
+          
+          # Launch Docker container for this Python version
+          docker run --rm \
+            -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+            -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+            -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+            -e CCACHE_DIR=/ccache \
+            -e CCACHE_MAXSIZE=${{ env.CCACHE_MAXSIZE }} \
+            -e CCACHE_COMPRESS=${{ env.CCACHE_COMPRESS }} \
+            -e CCACHE_COMPRESSLEVEL=${{ env.CCACHE_COMPRESSLEVEL }} \
+            -e USE_CCACHE=1 \
+            -e CMAKE_C_COMPILER_LAUNCHER=ccache \
+            -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -v $(pwd)/pytorch:/pytorch \
+            -v $(pwd)/builder:/pytorch_builder \
+            -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
+            -v $(pwd)/_build/ccache:/ccache \
+            -v $(pwd)/build_pytorch.py:/build_pytorch.py \
+            pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
+            python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-version ${{ needs.check-cache.outputs.first_python }}
+          df -h
+          echo "=== Completed build for Python ${{ needs.check-cache.outputs.first_python }} ==="
+          echo "ccache stats after build:"
+          du -sh _build/ccache
+
+      # Save ccache for next jobs
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-after-first-${{ github.run_id }}
+      
+      # Upload wheel file for first Python version
+      - name: Copy wheel files to artifacts
+        run: |
+          echo "Wheels directory content for Python ${{ needs.check-cache.outputs.first_python }}:"
+          find _build/wheelhouse118 -type f -name "*py${{ needs.check-cache.outputs.first_python }}*.whl" | sort
+          
+          mkdir -p _build/artifacts/
+          cp -v _build/wheelhouse118/*py${{ needs.check-cache.outputs.first_python }}*.whl _build/artifacts/ || echo "No wheel files found"
+
+      - name: Upload wheel artifacts for Python ${{ needs.check-cache.outputs.first_python }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-py${{ needs.check-cache.outputs.first_python }}-wheel
+          path: _build/artifacts/*.whl
+          if-no-files-found: warn
+
+  # Build remaining Python versions in parallel
+  build-remaining:
+    needs: [check-cache, build-first-python]
+    if: |
+      always() && 
+      (needs.check-cache.outputs.cache_hit != 'true' && needs.build-first-python.result == 'success') || 
+      needs.check-cache.outputs.cache_hit == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ${{ fromJson(needs.check-cache.outputs.cache_hit == 'true' ? needs.check-cache.outputs.python_versions : needs.check-cache.outputs.remaining_python) }}
+    steps:
+      - name: Get more space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 20480
+          swap-size-mb: 6000
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup directories
+        run: |
+          mkdir -p _build/artifacts
+          mkdir -p _build/wheelhouse118
+          mkdir -p _build/ccache
+
+      - name: Set environment variables
+        run: |
+          echo "PYTORCH_VERSION=${{ github.event.inputs.pytorch_version }}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=11.8" >> $GITHUB_ENV
+          echo "CUDA_VERSION_NO_DOT=118" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$(pwd)/_build/ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=9.8G" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=${{ matrix.python_version }}" >> $GITHUB_ENV
+
+      # Load ccache from previous jobs or initial state
+      - name: Restore ccache
+        id: restore-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-py${{ matrix.python_version }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-pytorch-${{ github.event.inputs.pytorch_version }}-after-first-${{ github.run_id }}
+            ccache-pytorch-${{ github.event.inputs.pytorch_version }}-
+            ccache-pytorch-
+
+      # Clone PyTorch for this Python version
+      - name: Clone PyTorch
+        run: |
+          git clone --depth=1 -b "v${{ github.event.inputs.pytorch_version }}" --recursive https://github.com/pytorch/pytorch.git pytorch
+          
+      # Clone builder repository
+      - name: Clone builder repository
+        run: |
+          git clone --depth=1 -b "release/2.5" https://github.com/pytorch/builder.git builder
+
+      - name: Display build info
+        run: |
+          df -h
+          echo "Current Date and Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Building for Python version: ${{ matrix.python_version }}"
+          echo "Initial ccache stats:"
+          du -sh _build/ccache || true
+
+      # Build PyTorch wheel for this Python version
+      - name: Build PyTorch wheel for Python ${{ matrix.python_version }}
+        run: |
+          echo "=== Building for Python ${{ matrix.python_version }} ==="
+          
+          # Launch Docker container for this Python version
+          docker run --rm \
+            -e PYTORCH_VERSION=${{ env.PYTORCH_VERSION }} \
+            -e CUDA_VERSION=${{ env.CUDA_VERSION }} \
+            -e CUDA_VERSION_NO_DOT=${{ env.CUDA_VERSION_NO_DOT }} \
+            -e CCACHE_DIR=/ccache \
+            -e CCACHE_MAXSIZE=${{ env.CCACHE_MAXSIZE }} \
+            -e CCACHE_COMPRESS=${{ env.CCACHE_COMPRESS }} \
+            -e CCACHE_COMPRESSLEVEL=${{ env.CCACHE_COMPRESSLEVEL }} \
+            -e USE_CCACHE=1 \
+            -e CMAKE_C_COMPILER_LAUNCHER=ccache \
+            -e CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -v $(pwd)/pytorch:/pytorch \
+            -v $(pwd)/builder:/pytorch_builder \
+            -v $(pwd)/_build/wheelhouse118:/remote/wheelhouse118 \
+            -v $(pwd)/_build/ccache:/ccache \
+            -v $(pwd)/build_pytorch.py:/build_pytorch.py \
+            pytorch/manylinux-builder:cuda${{ env.CUDA_VERSION }} \
+            python3 /build_pytorch.py --pytorch-version ${{ env.PYTORCH_VERSION }} --python-version ${{ matrix.python_version }}
+          df -h
+          echo "=== Completed build for Python ${{ matrix.python_version }} ==="
+          echo "ccache stats after build:"
+          du -sh _build/ccache
+
+      # Save updated ccache
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        with:
+          path: _build/ccache
+          key: ccache-pytorch-${{ github.event.inputs.pytorch_version }}-py${{ matrix.python_version }}-${{ github.run_id }}
+      
+      # Upload wheel file for this Python version
+      - name: Copy wheel files to artifacts
+        run: |
+          echo "Wheels directory content for Python ${{ matrix.python_version }}:"
+          find _build/wheelhouse118 -type f -name "*py${{ matrix.python_version }}*.whl" | sort
+          
+          mkdir -p _build/artifacts/
+          cp -v _build/wheelhouse118/*py${{ matrix.python_version }}*.whl _build/artifacts/ || echo "No wheel files found"
+
+      - name: Upload wheel artifacts for Python ${{ matrix.python_version }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-${{ env.PYTORCH_VERSION }}-cu${{ env.CUDA_VERSION_NO_DOT }}-py${{ matrix.python_version }}-wheel
+          path: _build/artifacts/*.whl
+          if-no-files-found: warn
+
+  release:
+    needs: [check-cache, build-first-python, build-remaining]
+    if: |
+      always() && 
+      (needs.check-cache.result == 'success') && 
+      (needs.check-cache.outputs.cache_hit == 'true' || needs.build-first-python.result == 'success') &&
+      (needs.build-remaining.result == 'success' || needs.build-remaining.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Create artifacts directory
+        run: mkdir -p _build/artifacts
+      
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pytorch-${{ github.event.inputs.pytorch_version }}-cu*-py*-wheel
+          path: _build/artifacts
+          merge-multiple: true
+      
+      - name: List downloaded wheels
+        run: |
+          find _build/artifacts -type f -name "*.whl" | sort
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pytorch-${{ github.event.inputs.pytorch_version }}
+          name: PyTorch ${{ github.event.inputs.pytorch_version }}
+          body: |
+            PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8
+            Built with architecture support for SM35-SM90.
+            
+            Includes wheels for Python ${{ github.event.inputs.python_versions }}.
+            Build date: $(date -u '+%Y-%m-%d')
+          draft: false
+          prerelease: false
+          files: _build/artifacts/*.whl

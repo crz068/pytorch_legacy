@@ -74,7 +74,7 @@ def setup_cuda_env():
         
         # 来自 build_common.sh 的其他变量
         "BUILD_PYTHONLESS": "",  # 为空因为我们正在构建 wheels
-        "USE_SPLIT_BUILD": "true",  # 使用分离构建以加速编译
+        "USE_SPLIT_BUILD": "false",  # 使用分离构建以加速编译
         "BUILD_DEBUG_INFO": "0",  # 默认不构建调试信息
         "DISABLE_RCCL": "0",  # 启用 NCCL/RCCL
         

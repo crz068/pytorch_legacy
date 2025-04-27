@@ -316,13 +316,17 @@ jobs:
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: "*.whl"
+          # Remove the pattern filter to download all artifacts
           path: _build/artifacts
           merge-multiple: true
       
       - name: List downloaded wheels
         run: |
           find _build/artifacts -type f -name "*.whl" | sort
+      
+      - name: Get current date
+        id: date
+        run: echo "BUILD_DATE=$(date -u '+%Y-%m-%d')" >> $GITHUB_OUTPUT
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -334,7 +338,7 @@ jobs:
             Built with architecture support for SM35-SM90.
             
             Includes wheels for Python ${{ github.event.inputs.python_versions }}.
-            Build date: $(date -u '+%Y-%m-%d')
+            Build date: ${{ steps.date.outputs.BUILD_DATE }}
           draft: false
           prerelease: false
-          files: _build/artifacts/*.whl
+          files: _build/artifacts/**/*.whl

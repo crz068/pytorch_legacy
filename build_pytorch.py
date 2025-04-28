@@ -35,6 +35,53 @@ def setup_ccache():
     subprocess.run("ccache -s", shell=True)
     
     return ccache_dir
+    
+def install_cudnn87():
+    """下载并安装 cuDNN 8.7 以覆盖现有版本"""
+    print("Installing cuDNN 8.7.0.84...")
+    
+    # cuDNN 下载 URL 和名称
+    cudnn_url = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-8.7.0.84_cuda11-archive.tar.xz"
+    cudnn_name = "cudnn-linux-x86_64-8.7.0.84_cuda11-archive"
+    
+    # 下载 cuDNN
+    print(f"Downloading {cudnn_name}...")
+    subprocess.run(f"curl --retry 3 -OLs {cudnn_url}", shell=True, check=True)
+    
+    # 解压 cuDNN
+    print("Extracting cuDNN...")
+    subprocess.run(f"tar xf {cudnn_name}.tar.xz", shell=True, check=True)
+    
+    # 备份原始 cuDNN 文件（如果需要）
+    print("Backing up original cuDNN files...")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    os.makedirs(f"/tmp/cudnn_backup_{timestamp}/include", exist_ok=True)
+    os.makedirs(f"/tmp/cudnn_backup_{timestamp}/lib", exist_ok=True)
+    
+    try:
+        subprocess.run("cp -a /usr/local/cuda/include/cudnn*.h /tmp/cudnn_backup_{timestamp}/include/", shell=True)
+        subprocess.run("cp -a /usr/local/cuda/lib64/libcudnn* /tmp/cudnn_backup_{timestamp}/lib/", shell=True)
+    except:
+        print("No previous cuDNN files to backup or error during backup")
+    
+    # 复制新的 cuDNN 文件
+    print("Installing cuDNN 8.7 files...")
+    subprocess.run(f"cp -a {cudnn_name}/include/* /usr/local/cuda/include/", shell=True, check=True)
+    subprocess.run(f"cp -a {cudnn_name}/lib/* /usr/local/cuda/lib64/", shell=True, check=True)
+    
+    # 清理下载文件
+    print("Cleaning up downloaded files...")
+    subprocess.run(f"rm -rf {cudnn_name}.tar.xz {cudnn_name}", shell=True)
+    
+    # 验证安装
+    print("Verifying cuDNN installation...")
+    try:
+        cudnn_version = subprocess.check_output("grep CUDNN_MAJOR /usr/local/cuda/include/cudnn_version.h | awk '{print $3}'", shell=True).decode().strip()
+        print(f"Installed cuDNN major version: {cudnn_version}")
+    except:
+        print("Could not verify cuDNN version")
+    
+    print("cuDNN 8.7 installation completed")
 
 def setup_cuda_env():
     """设置 CUDA 11.8 特定的环境变量（基于 build_cuda.sh）"""
@@ -190,6 +237,7 @@ def main():
     
     # 设置 ccache
     setup_ccache()
+    install_cudnn87()
     
     cuda_version, cuda_version_nodot = setup_cuda_env()
     

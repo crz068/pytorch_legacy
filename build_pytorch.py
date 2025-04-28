@@ -59,8 +59,8 @@ def install_cudnn87():
     os.makedirs(f"/tmp/cudnn_backup_{timestamp}/lib", exist_ok=True)
     
     try:
-        subprocess.run("cp -a /usr/local/cuda/include/cudnn*.h /tmp/cudnn_backup_{timestamp}/include/", shell=True)
-        subprocess.run("cp -a /usr/local/cuda/lib64/libcudnn* /tmp/cudnn_backup_{timestamp}/lib/", shell=True)
+        subprocess.run(f"cp -a /usr/local/cuda/include/cudnn*.h /tmp/cudnn_backup_{timestamp}/include/", shell=True)
+        subprocess.run(f"cp -a /usr/local/cuda/lib64/libcudnn* /tmp/cudnn_backup_{timestamp}/lib/", shell=True)
     except:
         print("No previous cuDNN files to backup or error during backup")
     

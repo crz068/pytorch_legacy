@@ -27,7 +27,7 @@ def setup_ccache():
     
     # 配置 ccache
     print(f"Using ccache directory: {ccache_dir}")
-    subprocess.run("ccache -M 25G", shell=True)
+    subprocess.run("ccache -M 1G", shell=True)
     subprocess.run("ccache -o compression=true", shell=True)
     subprocess.run("ccache -o compression_level=6", shell=True)
     
@@ -55,14 +55,6 @@ def install_cudnn87():
     # 备份原始 cuDNN 文件（如果需要）
     print("Backing up original cuDNN files...")
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    os.makedirs(f"/tmp/cudnn_backup_{timestamp}/include", exist_ok=True)
-    os.makedirs(f"/tmp/cudnn_backup_{timestamp}/lib", exist_ok=True)
-    
-    try:
-        subprocess.run(f"cp -a /usr/local/cuda/include/cudnn*.h /tmp/cudnn_backup_{timestamp}/include/", shell=True)
-        subprocess.run(f"cp -a /usr/local/cuda/lib64/libcudnn* /tmp/cudnn_backup_{timestamp}/lib/", shell=True)
-    except:
-        print("No previous cuDNN files to backup or error during backup")
     
     # 复制新的 cuDNN 文件
     print("Installing cuDNN 8.7 files...")
@@ -71,7 +63,7 @@ def install_cudnn87():
     
     # 清理下载文件
     print("Cleaning up downloaded files...")
-    subprocess.run(f"rm -rf {cudnn_name}.tar.xz {cudnn_name}", shell=True)
+    subprocess.run(f"rm -rf {cudnn_name}.tar.xz {cudnn_name} && ls -lh", shell=True)
     
     # 验证安装
     print("Verifying cuDNN installation...")

@@ -229,9 +229,9 @@ def main():
                 f.write(f"export {key}\n")
             else:
                 f.write(f"export {key}=\"{value}\"\n")
-        
+        f.write("\nDEPS_LIST has ${#DEPS_LIST[@]} elements\n")
         # 调用 build_common.sh
-        f.write(f"\ncd /pytorch && {manywheel_path}/build_common.sh\n")
+        # f.write(f"\ncd /pytorch && {manywheel_path}/build_common.sh\n")
     
     # 使其可执行
     subprocess.run("chmod +x /tmp/build_wrapper.sh", shell=True, check=True)

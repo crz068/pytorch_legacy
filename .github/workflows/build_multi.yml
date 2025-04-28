@@ -335,7 +335,7 @@ jobs:
           name: PyTorch ${{ github.event.inputs.pytorch_version }}
           body: |
             PyTorch ${{ github.event.inputs.pytorch_version }} with CUDA 11.8
-            Built with architecture support for SM35-SM90.
+            Built with architecture support for SM35-SM37.
             
             Includes wheels for Python ${{ github.event.inputs.python_versions }}.
             Build date: ${{ steps.date.outputs.BUILD_DATE }}

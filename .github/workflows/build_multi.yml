@@ -62,8 +62,8 @@ jobs:
       - name: Get more space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 18432
-          swap-size-mb: 4096
+          root-reserve-mb: 19000
+          swap-size-mb: 3000
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -187,8 +187,8 @@ jobs:
       - name: Get more space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 18432
-          swap-size-mb: 4096
+          root-reserve-mb: 19000
+          swap-size-mb: 3000
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
